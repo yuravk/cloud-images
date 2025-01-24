@@ -201,7 +201,9 @@ variable "ovmf_vars" {
   description = "Path of OVMF variables file"
 
   type    = string
-  default = "/usr/share/OVMF/OVMF_VARS.secboot.fd"
+  # default = "/usr/share/OVMF/OVMF_VARS.secboot.fd"
+  default = "/usr/share/OVMF/OVMF_VARS_4M.fd"
+
 }
 
 variable "aavmf_code" {
