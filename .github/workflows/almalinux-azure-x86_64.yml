@@ -1,0 +1,136 @@
+name: almalinux-azure-x86_64
+
+on:
+  workflow_dispatch:
+      inputs:
+
+        version_major:
+          description: 'AlmaLinux major version'
+          required: true
+          default: '9'
+          type: choice
+          options:
+            - 10-kitten
+            - 10
+            - 9
+            - 8
+
+jobs:
+  compose-test:
+    name: AlmaLinux OS ${{ matrix.variant }} x86_64 Azure
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(format('["{0}"]', ( inputs.version_major == '10-kitten' && '10-kitten", "10-kitten-x86_64_v2' || ( inputs.version_major == '10' && '10", "10-x86_64_v2' || inputs.version_major ) ) )) }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # - name: Prepare stuff
+    #   run: |
+    #     # Environment variables
+    #     pungi_latest_result=latest_result
+    #     pulp_root=${{ inputs.version_major }}
+    #     tmt_options=
+    #     rpm_gpg_key=/etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux
+    #     vm_box=almalinux/${{ inputs.version_major }}
+    #     release_version=${{ inputs.version_major }}
+    #     dnf_crb_repo='CRB'
+    #     basearch=x86_64
+
+    #     case ${{ matrix.variant }} in
+    #       8)
+    #         dnf_crb_repo='PowerTools'
+    #         ;;
+    #       9)
+    #         tmt_options='--feeling-safe'
+    #         rpm_gpg_key="${rpm_gpg_key}-9"
+    #         ;;
+    #       10)
+    #         vm_box=lkhn/almalinux-10                # TODO: use official image when available
+    #         tmt_options='--feeling-safe'
+    #         rpm_gpg_key="${rpm_gpg_key}-10"
+    #         ;;
+    #       10-x86_64_v2)
+    #         vm_box=yuravk/almalinux-10-x86-64-v2    # TODO: use official image when available
+    #         tmt_options='--feeling-safe'
+    #         rpm_gpg_key="${rpm_gpg_key}-10"
+    #         basearch=x86_64_v2
+    #         ;;
+    #       10-kitten)
+    #         vm_box=almalinux/10-kitten
+    #         release_version=10
+    #         pulp_root=kitten-10
+    #         pungi_latest_result="${pungi_latest_result}_almalinux-kitten"
+    #         tmt_options='--feeling-safe'
+    #         rpm_gpg_key="${rpm_gpg_key}-10"
+    #         ;;
+    #       10-kitten-x86_64_v2)
+    #         vm_box=almalinux/10-kitten-x86_64_v2
+    #         release_version=10
+    #         pulp_root=kitten-10
+    #         pungi_latest_result="${pungi_latest_result}_almalinux-kitten"
+    #         tmt_options='--feeling-safe'
+    #         rpm_gpg_key="${rpm_gpg_key}-10"
+    #         basearch=x86_64_v2
+    #         ;;
+    #     esac
+    #     # Release major version
+    #     echo "release_version=${release_version}" >> $GITHUB_ENV
+
+    #     # Basearch for the repositories
+    #     echo "basearch=${basearch}" >> $GITHUB_ENV
+
+    #     # Pulp repository root of the release
+    #     echo "pulp_root=${pulp_root}" >> $GITHUB_ENV
+
+    #     # Pungi repository latest results directory
+    #     echo "pungi_latest_result=${pungi_latest_result}" >> $GITHUB_ENV
+
+    #     # Name of repository to enable (PowerTools/CRB)
+    #     if [ "x${{ inputs.pulp_repository }}" = "xtrue" ]; then
+    #       # Lowercase the name for path in pulp's URL
+    #       pulp_crb_repo="${dnf_crb_repo,,}"
+    #     fi
+    #     echo "dnf_crb_repo=${dnf_crb_repo}" >> $GITHUB_ENV
+    #     echo "pulp_crb_repo=${pulp_crb_repo}" >> $GITHUB_ENV
+
+    #     # TMT extra options
+    #     echo "tmt_options=${tmt_options}" >> $GITHUB_ENV
+
+    #     # RPM_GPG_KEY file
+    #     echo "rpm_gpg_key=${rpm_gpg_key}" >> $GITHUB_ENV
+
+    #     # Use proper Vagrantfile and set ENV variable of config.vm.box
+    #     cp -av ci/Vagrant/Vagrantfile ./
+    #     echo vm_box=${vm_box} > .env
+
+    #     # TMT tests run directory
+    #     echo "tmt_run_dir=/var/tmp/tmt/run-001" >> $GITHUB_ENV
+
+    - name: Install KVM Packages and Start libvirt
+      run: |
+        sudo apt-get -y update
+        sudo apt-get -y install qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils
+        sudo systemctl enable --now libvirtd
+        sudo adduser "$(id -un)" libvirt
+        sudo adduser "$(id -un)" kvm
+
+    - name: Enable KVM group perms
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Tune libvirt
+      run: virsh list --all
+
+    - name: Install packer
+      run: sudo apt-get -y install packer
+
+    - name: Install ansible
+      run: sudo apt-get -y install ansible
+
+    - name: Initialize packer
+      run: packer init -upgrade .
