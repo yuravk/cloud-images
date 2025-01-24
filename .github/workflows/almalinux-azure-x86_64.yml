@@ -109,6 +109,10 @@ jobs:
     #     # TMT tests run directory
     #     echo "tmt_run_dir=/var/tmp/tmt/run-001" >> $GITHUB_ENV
 
+    - name: install extra packages
+      run: |
+        sudo apt-get -y install ovmf
+
     - name: Install KVM Packages and Start libvirt
       run: |
         sudo apt-get -y update
