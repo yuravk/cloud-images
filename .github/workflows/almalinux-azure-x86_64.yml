@@ -112,6 +112,7 @@ jobs:
     - name: install extra packages
       run: |
         sudo apt-get -y install ovmf
+        sudo ls -la /usr/share/OVMF/
 
     - name: Install KVM Packages and Start libvirt
       run: |
