@@ -137,3 +137,7 @@ jobs:
 
     - name: Initialize packer
       run: packer init -upgrade .
+
+    - name: Build Azure image
+      run: |
+        packer build -only=qemu.almalinux-${{ matrix.variant }}-azure-x86_64 .
