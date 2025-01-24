@@ -1,0 +1,84 @@
+name: build-ami
+
+on:
+  workflow_dispatch:
+      inputs:
+
+        # Available builds for AMI:
+        #  amazon-ebssurrogate.almalinux_8_ami_x86_64
+        #  amazon-ebssurrogate.almalinux_8_ami_aarch64
+        #  amazon-ebssurrogate.almalinux_9_ami_x86_64
+        #  amazon-ebssurrogate.almalinux_9_ami_aarch64
+        #  amazon-ebssurrogate.almalinux_kitten_10_ami_x86_64
+        #  amazon-ebssurrogate.almalinux_kitten_10_ami_aarch64
+
+        version_major:
+          description: 'AlmaLinux major version'
+          required: true
+          default: '9'
+          type: choice
+          options:
+            - kitten_10
+            - 10
+            - 9
+            - 8
+
+jobs:
+  build-images:
+    name: ${{ matrix.variant }} ${{ matrix.arch }} AMI
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(format('["{0}"]', inputs.version_major )) }}
+        arch:
+          - x86-64
+          - aarch64
+        exclude:
+          - variant: 10
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Prepare staff
+      run: |
+        packer_template=amazon-ebssurrogate.almalinux_${{ matrix.variant }}_ami_${{ matrix.arch }}
+        echo "PACKER_TEMPLATE=${packer_template}" >> $GITHUB_ENV
+
+        echo "VERSION_MAJOR=${{ matrix.variant == 'kitten_10' && '10_KITTEN' || matrix.variant }}" >> $GITHUB_ENV
+        ARCH=${{ matrix.arch }}; echo "ARCH=${ARCH^^}" >> $GITHUB_ENV
+
+    - name: Update system
+      run: |
+        sudo apt-get -y update
+
+    - name: Add Hashicorp repository
+      run: |
+        wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+        sudo apt-get -y update
+
+    - name: Install packer
+      run: |
+        sudo apt-get -y install packer
+
+    - name: Install ansible
+      run: sudo apt-get -y install ansible
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4.0.2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Initialize packer
+      run: sudo packer init -upgrade .
+
+    - name: Build ${{ matrix.variant }} ${{ matrix.arch }} AMI
+      run: |
+        echo packer build \
+          -var='aws_source_ami_${{ matrix.variant }}_${{ matrix.arch }}=${{ secrets[format('EC2_AMI_ID_AL{0}_{1}',  env.VERSION_MAJOR, env.ARCH )] }}' \
+          -var='aws_ami_region=${{ secrets.AWS_REGION }}' \
+          -var='aws_ami_regions=["${{ secrets.AWS_REGION }}"]' \
+          -only=${{ env.PACKER_TEMPLATE }} .

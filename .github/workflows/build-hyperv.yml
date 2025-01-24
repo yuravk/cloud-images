@@ -1,0 +1,104 @@
+name: build-hyperv
+
+on:
+  workflow_dispatch:
+      inputs:
+
+        # Available builds under Hyper-V:
+
+        #  hyperv-iso.almalinux-8
+        #  hyperv-iso.almalinux-9
+
+        version_major:
+          description: 'AlmaLinux major version'
+          required: true
+          default: '9'
+          type: choice
+          options:
+            - 9
+            - 8
+
+env:
+  # to solve "Plugin host rate limited the plugin getter."
+  PACKER_GITHUB_API_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+
+jobs:
+  build-images:
+    name: ${{ matrix.variant }} Hyper-V image
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(format('["{0}"]', ( inputs.version_major == '10-kitten' && '10-kitten", "10-kitten-x86_64_v2' || ( inputs.version_major == '10' && '10", "10-x86_64_v2' || inputs.version_major ) ) )) }}
+        exclude:
+          - variant: '10'
+          - variant: '10-x86_64_v2'
+          - variant: '10-kitten'
+          - variant: '10-kitten-x86_64_v2'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Generate cloud-init config for Ubuntu-24.04 WSL
+      shell: pwsh
+      run: |
+        # Generate cloud-init config for Ubuntu-24.04 WSL
+        $cidir = $env:USERPROFILE + '\.cloud-init'
+        $userdata = $env:USERPROFILE + '\.cloud-init\' + 'Ubuntu-24.04.user-data'
+        New-Item -Path $env:USERPROFILE -Name ".cloud-init" -ItemType "directory"
+
+        "#cloud-config" | Out-File $userdata -encoding ascii
+        "locale: en_US" | Out-File $userdata -encoding ascii -Append
+        "users:" | Out-File $userdata -encoding ascii -Append
+        "- name: vagrant" | Out-File $userdata -encoding ascii -Append
+        "  lock_passwd: false" | Out-File $userdata -encoding ascii -Append
+        '  passwd: $6$j212wezy$7H/1LT4f9/N3wpgNunhsIqtMj62OKiS3nyNwuizouQc3u7MbYCarYeAHWYPYb2FT.lbioDm2RrkJPb9BZMN1O/' | Out-File $userdata -encoding ascii -Append
+        "  gecos: Vagrant User" | Out-File $userdata -encoding ascii -Append
+        "  groups: [adm,dialout,cdrom,floppy,sudo,audio,dip,video,plugdev,netdev]" | Out-File $userdata -encoding ascii -Append
+        "  sudo: ALL=(ALL) NOPASSWD:ALL" | Out-File $userdata -encoding ascii -Append
+        "  shell: /bin/bash" | Out-File $userdata -encoding ascii -Append
+
+        "write_files:" | Out-File $userdata -encoding ascii -Append
+        "- path: /etc/wsl.conf" | Out-File $userdata -encoding ascii -Append
+        "  append: true" | Out-File $userdata -encoding ascii -Append
+        "  content: |" | Out-File $userdata -encoding ascii -Append
+        "    [user]" | Out-File $userdata -encoding ascii -Append
+        "    default=vagrant" | Out-File $userdata -encoding ascii -Append
+
+        "packages: [ginac-tools, octave]" | Out-File $userdata -encoding ascii -Append
+
+        "runcmd:" | Out-File $userdata -encoding ascii -Append
+        "  - sudo git clone https://github.com/Microsoft/vcpkg.git /opt/vcpkg" | Out-File $userdata -encoding ascii -Append
+        "  - sudo apt-get install zip curl -y" | Out-File $userdata -encoding ascii -Append
+        "  - /opt/vcpkg/bootstrap-vcpkg.sh" | Out-File $userdata -encoding ascii -Append
+
+        ls $cidir
+        get-content $userdata
+
+    - name: Install WSL
+      shell: pwsh
+      run: |
+        wsl --install -d Ubuntu-24.04 --no-launch
+
+    - name: Register a new Ubuntu-24.04 instance
+      shell: pwsh
+      run: |
+        # Will require user input to set password
+        ubuntu2404.exe
+
+    - name: Check Hyper-V is installed
+      shell: pwsh
+      run: |
+        Get-WindowsFeature -Name Hyper-V | Select-Object -Property Name, InstallState
+
+    - name: Initialize packer
+      shell: pwsh
+      run: |
+        Set-Location -Path D:/a/cloud-images/cloud-images
+        packer init -upgrade .
+
+    - name: Build ${{ inputs.type }} image
+      shell: pwsh
+      run: |
+        Set-Location -Path D:/a/cloud-images/cloud-images
+        packer build -only="hyperv-iso.almalinux-${{ matrix.variant }}" .

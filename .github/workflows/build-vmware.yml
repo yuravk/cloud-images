@@ -1,0 +1,273 @@
+name: build-vmware
+
+on:
+  workflow_dispatch:
+      inputs:
+
+        # Available builds under vmware:
+
+        #  vmware-iso.almalinux-9-aarch64     output-almalinux-9-aarch64/AlmaLinux-9-Vagrant-VMware-9.5-20250205.aarch64
+        #  vmware-iso.almalinux-9             output-almalinux-9/AlmaLinux-9-Vagrant-VMware-9.5-20250205.x86_64
+
+        version_major:
+          description: 'AlmaLinux major version'
+          required: true
+          default: '9'
+          type: choice
+          options:
+            - 10-kitten
+            - 10
+            - 9
+
+        arch:
+          description: 'Architecture'
+          required: true
+          default: 'aarch64'
+          type: choice
+          options:
+            - aarch64
+            - x86_64
+
+        type:
+          description: 'Image type'
+          required: true
+          default: 'vagrant_vmware'
+          type: choice
+          options:
+            - vagrant_vmware
+
+        store_as_artifact:
+          description: "Store images to the workflow Artifacts"
+          required: true
+          type: boolean
+          default: false
+
+        upload_to_s3:
+          description: "Upload to S3 Bucket"
+          required: true
+          type: boolean
+          default: false
+
+        vagrant_publish:
+          description: "Publish to Vagrant Cloud (vagrant_* types only)"
+          required: true
+          type: boolean
+          default: false
+
+        notify_mattermost:
+          description: "Send notification to Mattermost"
+          required: true
+          type: boolean
+          default: false
+
+env:
+  # to solve "Plugin host rate limited the plugin getter."
+  PACKER_GITHUB_API_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+
+jobs:
+  build-images:
+    name: ${{ matrix.variant }} ${{ inputs.type }} ${{matrix.arch }} image
+    runs-on: ${{ inputs.arch == 'x86_64' && 'macos-13' || 'macos-15' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(format('["{0}"]', ( inputs.version_major == '10-kitten' && '10-kitten", "10-kitten-x86_64_v2' || ( inputs.version_major == '10' && '10", "10-x86_64_v2' || inputs.version_major ) ) )) }}
+        type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
+        arch: ${{ fromJSON(format('["{0}"]', inputs.arch )) }}
+        exclude:
+          - variant: '10'
+          - variant: '10-x86_64_v2'
+          - variant: '10-kitten'
+          - variant: '10-kitten-x86_64_v2'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: install extra packages
+      run: |
+        brew install rpm
+
+    - name: Prepare staff
+      shell: bash
+      run: |
+        # date+time stamp, YYYYMMDDhhmmss
+        time_stamp=$(date -u '+%Y%m%d%H%M%S')
+
+        # date stamp, YYYYMMDD
+        date_stamp=$(date -u '+%Y%m%d')
+
+        # Image type e.g. VMware
+        image_type=VMware
+
+        # Release version
+        if [[ ${{ inputs.version_major }} != *'kitten'* ]]; then
+          almalinux_release=https://repo.almalinux.org/almalinux/almalinux-release-latest-${{ inputs.version_major }}.x86_64.rpm
+          # TODO: remove when AlmaLinux 10.0 is released
+          [ "${{ inputs.version_major }}" = "10" ] && almalinux_release=https://vault.almalinux.org/almalinux-release-latest-10-beta.x86_64.rpm
+          release=$(rpm -q --qf="%{VERSION}\n" ${almalinux_release} 2>/dev/null)
+        fi
+
+        case ${{ inputs.arch }} in
+          x86_64)
+            packer_template=vmware-iso.almalinux-${{ matrix.variant }}
+            output_mask=output-almalinux-${{ matrix.variant }}/AlmaLinux-${{ matrix.variant }}-Vagrant-VMware-*.x86_64
+            ;;
+          aarch64)
+            packer_template=vmware-iso.almalinux-${{ matrix.variant }}-aarch64
+            output_mask=output-almalinux-${{ matrix.variant }}-aarch64/AlmaLinux-${{ matrix.variant }}-Vagrant-VMware-*.aarch64
+            ;;
+        esac
+        aws_s3_path=images/${{ matrix.variant }}/${release}/${{ inputs.type }}/${time_stamp}
+
+        echo "TIME_STAMP=${time_stamp}" >> $GITHUB_ENV
+        echo "DATE_STAMP=${date_stamp}" >> $GITHUB_ENV
+        echo "IMAGE_TYPE=${image_type}" >> $GITHUB_ENV
+        echo "RELEASE=${release}" >> "$GITHUB_ENV"
+        echo "PACKER_TEMPLATE=${packer_template}" >> $GITHUB_ENV
+        echo "output_mask=${output_mask}" >> $GITHUB_ENV
+        echo "AWS_S3_PATH=${aws_s3_path}" >> $GITHUB_ENV
+
+    - name: Install VMware
+      run: |
+        brew install --cask vmware-fusion
+
+    - name: Configure VMware
+      run: |
+        sudo /Applications/VMware\ Fusion.app/Contents/Library/vmnet-cli --configure -v
+
+    # - name: Install packer
+    #   run: |
+    #     brew tap hashicorp/tap
+    #     brew install hashicorp/tap/packer
+
+    - name: Install ansible
+      run: brew install ansible
+
+    - name: Initialize packer
+      run: packer init -upgrade .
+
+    - name: Build ${{ inputs.type }} image
+      run: |
+        PACKER_LOG=1 packer build \
+          -only=${{ env.PACKER_TEMPLATE }} .
+
+    # - name: Setup tmate session
+    #   uses: mxschmitt/action-tmate@v3
+    #   if: ${{ failure() }}
+
+    - name: Locate image file, generate checksum
+      run: |
+        image_file=$(ls -1 ${{ env.output_mask }} | head -n 1)
+        [ "x${image_file}" = "x" ] && false
+        cd $(dirname ${image_file})
+        sudo sh -c "sha256sum $(basename ${image_file}) > $(basename ${image_file}).sha256sum"
+
+        echo "IMAGE_FILE=${image_file}" >> $GITHUB_ENV
+        echo "IMAGE_NAME=$(basename ${image_file})" >> $GITHUB_ENV
+
+    - uses: actions/upload-artifact@v4
+      name: Store image as artifact
+      id: image-artifact
+      if: inputs.store_as_artifact
+      with:
+        compression-level: 1
+        name: ${{ env.IMAGE_NAME }}
+        path: ${{ env.IMAGE_FILE }}
+
+    - uses: actions/upload-artifact@v4
+      name: Store checksum as artifact
+      id: checksum-artifact
+      if: inputs.store_as_artifact
+      with:
+        compression-level: 1
+        name: ${{ env.IMAGE_NAME }}.sha256sum
+        path: ${{ env.IMAGE_FILE }}.sha256sum
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4.0.2
+      if: inputs.upload_to_s3
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Publish to S3 Bucket and put object tagging with aws CLI
+      if: inputs.upload_to_s3
+      run: |
+        cd $(dirname ${{ env.IMAGE_FILE }})
+        for object in ${{ env.IMAGE_NAME }} ${{ env.IMAGE_NAME }}.sha256sum; do
+          aws s3 cp ${object} s3://${{ vars.AWS_S3_BUCKET }}/${{ env.AWS_S3_PATH }}/
+          aws s3api put-object-tagging --bucket ${{ vars.AWS_S3_BUCKET }} --key ${{ env.AWS_S3_PATH }}/${object} --tagging 'TagSet={Key=public,Value=yes}'
+        done
+
+    - name: Put S3 Bucket download URLs
+      if: inputs.upload_to_s3
+      uses: actions/github-script@v7
+      with:
+        result-encoding: string
+        script: |
+          core.summary
+              .addHeading('S3 Bucket download URLs', '4')
+              .addLink('${{ env.IMAGE_NAME }}.sha256sum', 'https://${{ vars.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}.sha256sum')
+              .addBreak()
+              .addLink('${{ env.IMAGE_NAME }}', 'https://${{ vars.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}')
+              .write()
+
+    - name: Send notification to Mattermost (Artifacts)
+      uses: mattermost/action-mattermost-notify@master
+      if: ${{ inputs.store_as_artifact == 'true' && inputs.notify_mattermost == 'true' && inputs.upload_to_s3 == 'false' }}
+      with:
+        MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+        MATTERMOST_CHANNEL: ${{ secrets.MATTERMOST_CHANNEL }}
+        MATTERMOST_USERNAME: ${{ github.triggering_actor }}
+        TEXT: |
+          **AlmaLinux OS ${{ env.RELEASE }}} x86_64 Cloud Images** `${{ env.TIME_STAMP }}` generated by the GitHub [Action](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          :almalinux: **${{ env.IMAGE_TYPE }}**
+
+          - CHECKSUM(SHA256) [zipped]: [${{ env.IMAGE_NAME }}.sha256sum](${{ steps.checksum-artifact.outputs.artifact-url }})
+
+          - Image [zipped]: [${{ env.IMAGE_NAME }}](${{ steps.image-artifact.outputs.artifact-url }})
+
+    - name: Send notification to Mattermost (AWS S3 links)
+      uses: mattermost/action-mattermost-notify@master
+      if: ${{ inputs.upload_to_s3 == 'true' && inputs.notify_mattermost == 'true' }}
+      with:
+        MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+        MATTERMOST_CHANNEL: ${{ secrets.MATTERMOST_CHANNEL }}
+        MATTERMOST_USERNAME: ${{ github.triggering_actor }}
+        TEXT: |
+          **AlmaLinux OS ${{ env.RELEASE }}} x86_64 Cloud Images** `${{ env.TIME_STAMP }}` generated by the GitHub [Action](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          :almalinux: **${{ env.IMAGE_TYPE }}**
+
+          - CHECKSUM(SHA256): [${{ env.IMAGE_NAME }}.sha256sum](https://${{ vars.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}.sha256sum)
+
+          - Image: [${{ env.IMAGE_NAME }}](https://${{ vars.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }})
+
+    - name: Vagrant cloud publish
+      if: inputs.vagrant_publish && ( inputs.type == 'vagrant_libvirt' || inputs.type == 'vagrant_virtualbox' )
+      run: |
+        sudo apt-get -y install hcp vagrant
+        hcp auth login --client-id=${{ secrets.HCP_CLIENT_ID}} --client-secret=${{ secrets.HCP_CLIENT_SECRET }}
+
+        cloud_token="$(sudo -E hcp auth print-access-token)"
+        box_name=almalinux-${{ matrix.variant }} # TODO: should be just major version for AlmaLinux organization
+        provider=${{ inputs.type }}; provider=${provider#"vagrant_"}
+        arch=amd64
+        checksum="$(sha256sum ${{ env.IMAGE_FILE }} | awk '{ print $1 }')"
+        echo "[Debug] provider=${provider} box_name=${box_name} checksum=${checksum} IMAGE_FILE=${{ env.IMAGE_FILE }}"
+
+        export VAGRANT_CLOUD_TOKEN="$(sudo -E hcp auth print-access-token)"
+        vagrant cloud publish \
+          -C sha256 \
+          -c ${checksum} \
+          --release \
+          -a ${arch} \
+          --direct-upload \
+          --debug \
+          -f \
+          "${{ secrets.HCP_ORG }}/${box_name}" \
+          ${{ env.RELEASE }}.${{ env.DATE_STAMP }} \
+          ${provider} \
+          ${{ env.IMAGE_FILE }}
