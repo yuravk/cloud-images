@@ -161,7 +161,7 @@ jobs:
 
   build-images:
     name: ${{ matrix.variant }} ${{ inputs.type }} image
-    runs-on: self-hosted
+    runs-on: self-hosted-aarch64
     strategy:
       fail-fast: false
       matrix:
@@ -190,7 +190,7 @@ jobs:
             variant: '10-kitten-x86_64_v2'
 
     env:
-      arch: x86_64
+      arch: aarch64
 
     steps:
     - uses: actions/checkout@v4
