@@ -139,7 +139,8 @@ jobs:
         github_token: ${{ secrets.GIT_HUB_TOKEN }}
         aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws_region: ${{ secrets.AWS_REGION }}
+        # aws_region: ${{ secrets.AWS_REGION }}
+        aws_region: us-east-1a
         # TODO: EC2_AMI_ID_AL9 (9-th AMI) should be used for Kitten 10 until appliance-tools isn't available
         # ec2_ami_id: ${{ secrets[format('EC2_AMI_ID_AL{0}', ( inputs.version_major == '10-kitten' && '9' || inputs.version_major ))] }}
         # ec2_ami_id: ami-0e6ac40472432aeb6 # Ubuntu 24.04
