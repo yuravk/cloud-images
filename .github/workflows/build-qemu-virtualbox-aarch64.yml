@@ -402,12 +402,12 @@ jobs:
         # echo "[Debug] Nested virtualization support:"
         # sudo cat /sys/module/kvm_amd/parameters/nested
 
-        # echo "vmx|svm CPU flags:"
-        # grep -E '(vmx|svm)' /proc/cpuinfo
-        # echo "KVM modules:"
-        # sudo lsmod | grep kvm
-        # echo "Nested virtualization support:"
-        # sudo cat /sys/module/kvm_intel/parameters/nested
+        echo "vmx|svm CPU flags:"
+        grep -E '(vmx|svm)' /proc/cpuinfo
+        echo "KVM modules:"
+        sudo lsmod | grep kvm
+        echo "Nested virtualization support:"
+        sudo cat /sys/module/*kvm*/parameters/nested
 
     - name: Enable KVM group perms
       if: inputs.type != 'vagrant_virtualbox' && inputs.type != 'vagrant_vmware'
@@ -416,9 +416,9 @@ jobs:
         # sudo udevadm control --reload-rules
         # sudo udevadm trigger --name-match=kvm
 
-        # echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-        # sudo udevadm control --reload-rules
-        # sudo udevadm trigger --name-match=kvm
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
 
     - name: Install virtualBox from its repository
       if: inputs.type == 'vagrant_virtualbox'
