@@ -516,6 +516,7 @@ jobs:
     - name: Install ansible
       run: |
         # sudo apt-get -y install ansible
+        sudo dnf -y install epel-release
         sudo dnf -y install ansible
 
     # - name: Initialize packer
