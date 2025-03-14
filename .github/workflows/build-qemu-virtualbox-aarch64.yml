@@ -226,8 +226,8 @@ jobs:
         # -var ovmf_code="/usr/share/OVMF/OVMF_CODE_4M.ms.fd" \
         # -var ovmf_vars="/usr/share/OVMF/OVMF_VARS_4M.ms.fd" \
 
-        # Ubuntu release codename
-        ubuntu_codename=$(lsb_release -cs)
+        # # Ubuntu release codename
+        # ubuntu_codename=$(lsb_release -cs)
 
         # date+time stamp, YYYYMMDDhhmmss
         time_stamp=$(date -u '+%Y%m%d%H%M%S')
