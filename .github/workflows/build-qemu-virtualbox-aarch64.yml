@@ -1,4 +1,4 @@
-name: build-qemu-virtualbox-x86_64
+name: build-qemu-virtualbox-aarch64
 
 on:
   workflow_dispatch:
