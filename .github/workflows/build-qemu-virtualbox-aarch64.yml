@@ -147,8 +147,8 @@ jobs:
         ec2_subnet_id: ${{ secrets.EC2_SUBNET_ID}}
         ec2_security_group_id: ${{ secrets.EC2_SECURITY_GROUP_ID }}
 
-        ec2_instance_type: t4g.medium       # 2 vCPU and 4 GiM Memory
-                                            # c7gd.metal, a1.metal
+        ec2_instance_type: a1.metal         # 2 vCPU and 4 GiM Memory
+                                            # t4g.medium, c7gd.metal, a1.metal
         ec2_root_disk_size_gb: "16"         # override default size which is too small for images
         ec2_root_disk_ebs_class: "gp3"      # use faster and cheeper storage instead of default 'gp2'
         ec2_instance_ttl: 60                # Optional (default is 60 minutes)
@@ -197,7 +197,8 @@ jobs:
     - name: Update system
       run: |
         # sudo apt-get -y update
-        sudo dnf -y -q update
+        # sudo dnf -y -q update
+        true
 
     # - name: install extra packages
     #   run: |
@@ -206,7 +207,8 @@ jobs:
     - name: Prepare staff
       run: |
         # Packer options
-        packer_opts="-var ovmf_code=/usr/share/OVMF/OVMF_CODE_4M.fd -var ovmf_vars=/usr/share/OVMF/OVMF_VARS_4M.fd"
+        # packer_opts="-var ovmf_code=/usr/share/OVMF/OVMF_CODE_4M.fd -var ovmf_vars=/usr/share/OVMF/OVMF_VARS_4M.fd"
+        packer_opts="-var qemu_binary=/usr/libexec/qemu-kvm"
 
         # -var qemu_binary="/usr/libexec/qemu-kvm" # to override qemu binary on Red Hat based systems
         # -var vagrant_ssh_username="root" # to override default vagrant user
@@ -545,7 +547,7 @@ jobs:
     - name: Build ${{ inputs.type }} image
       run: |
         # sudo sh -c "PACKER_LOG=1 packer build ${{ env.PACKER_OPTS }} -only=${{ env.packer_source }} ."
-        /usr/bin/packer build -var qemu_binary="/usr/libexec/qemu-kvm" ${{ env.PACKER_OPTS }} -only=${{ env.packer_source }} .
+        /usr/bin/packer build ${{ env.PACKER_OPTS }} -only=${{ env.packer_source }} .
 
     - name: Locate image file, generate checksum
       run: |
