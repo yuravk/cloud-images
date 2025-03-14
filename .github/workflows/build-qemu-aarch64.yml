@@ -1,0 +1,361 @@
+name: build-qemu-aarch64
+
+on:
+  workflow_dispatch:
+      inputs:
+
+        # Available builds under qemu-kvm:
+
+        #  qemu.almalinux-8-gencloud-x86_64             output-almalinux-8-gencloud-x86_64/AlmaLinux-8-GenericCloud-8.10-20250128.x86_64.qcow2
+        #  qemu.almalinux-8-gencloud-aarch64            output-almalinux-8-gencloud-aarch64/AlmaLinux-8-GenericCloud-8.10-20250128.aarch.qcow2
+        #  qemu.almalinux-9-gencloud-x86_64             output-almalinux-9-gencloud-x86_64/AlmaLinux-9-GenericCloud-9.5-20250128.x86_64.qcow2
+        #  qemu.almalinux-9-gencloud-aarch64            output-almalinux-9-gencloud-aarch64/AlmaLinux-9-GenericCloud-9.5-20250128.aarch.qcow2
+        #  qemu.almalinux_kitten_10_gencloud_x86_64     output-almalinux_kitten_10_gencloud_x86_64/AlmaLinux-Kitten-GenericCloud-10-20250129.0.x86_64.qcow2
+        #  qemu.almalinux_kitten_10_gencloud_x86_64_v2  output-almalinux_kitten_10_gencloud_x86_64_v2/AlmaLinux-Kitten-GenericCloud-10-20250129.0.x86_64_v2.qcow2
+        #  qemu.almalinux_kitten_10_gencloud_aarch64    output-almalinux_kitten_10_gencloud_aarch64/AlmaLinux-Kitten-GenericCloud-10-20250129.0.aarch64.qcow2
+
+        #  qemu.almalinux-8-azure-x86_64          output-almalinux-8-azure-x86_64/AlmaLinux-8-Azure-8.10-20250128.x86_64.raw
+        #  qemu.almalinux-8-azure-aarch64         output-almalinux-8-azure-aarch64/AlmaLinux-8-Azure-8.10-20250128.aarch64.raw
+        #  qemu.almalinux-9-azure-x86_64          output-almalinux-9-azure-x86_64/AlmaLinux-9-Azure-9.5-20250128.x86_64.raw
+        #  qemu.almalinux-9-azure-aarch64         output-almalinux-9-azure-aarch64/AlmaLinux-9-Azure-9.5-202501280.aarch64.raw
+        #  qemu.almalinux_9_azure_aarch64_64k     output-almalinux-9-azure-aarch64/AlmaLinux-9-Azure-9.5-202501280-64k.aarch64.raw
+        #  qemu.almalinux_kitten_10_azure_x86_64  output-almalinux_kitten_10_azure_x86_64/AlmaLinux-Kitten-Azure-10-20250129.0.x86_64.raw
+        #  qemu.almalinux_kitten_10_azure_aarch64 output-almalinux_kitten_10_azure_aarch64/AlmaLinux-Kitten-Azure-10-20250129.0.aarch64.raw
+        #  qemu.almalinux_kitten_10_azure_aarch64_64k  output-almalinux_kitten_10_azure_aarch64/AlmaLinux-Kitten-64k-Azure-10-20250129.0.aarch64.raw
+
+        #  qemu.almalinux-8-opennebula-x86_64                 output-almalinux-8-opennebula-x86_64/AlmaLinux-8-OpenNebula-8.10-20250129.x86_64.qcow2
+        #  qemu.almalinux-8-opennebula-aarch64                output-almalinux-8-opennebula-aarch64/AlmaLinux-8-OpenNebula-8.10-20250129.aarch64.qcow2
+        #  qemu.almalinux-9-opennebula-x86_64                 output-almalinux-9-opennebula-x86_64/AlmaLinux-9-OpenNebula-9.5-20250129.x86_64.qcow2
+        #  qemu.almalinux-9-opennebula-aarch64                output-almalinux-9-opennebula-aarch64/AlmaLinux-9-OpenNebula-9.5-20250129.aarch64.qcow2
+        #  qemu.almalinux_kitten_10_opennebula_x86_64         output-almalinux_kitten_10_opennebula_x86_64/AlmaLinux-Kitten-OpenNebula-10-20250129.0.x86_64.qcow2
+        #  qemu.almalinux_kitten_10_opennebula_x86_64_v2      output-almalinux_kitten_10_opennebula_x86_64_v2/AlmaLinux-Kitten-OpenNebula-10-20250129.0.x86_64_v2.qcow2
+        #  qemu.almalinux_kitten_10_opennebula_aarch64        output-almalinux_kitten_10_opennebula_aarch64/AlmaLinux-Kitten-OpenNebula-10-20250129.0.aarch64.qcow2
+
+        #  qemu.almalinux-8-oci-x86_64            output-almalinux-8-oci-x86_64/AlmaLinux-8-OCI-8.10-20250129.x86_64.qcow2
+        #  qemu.almalinux-8-oci-aarch64           output-almalinux-8-oci-aarch64/AlmaLinux-8-OCI-8.10-20250129.aarch64.qcow2
+        #  qemu.almalinux-9-oci-x86_64            output-almalinux-9-oci-x86_64/AlmaLinux-8-OCI-9.5-20250129.x86_64.qcow2
+        #  qemu.almalinux-9-oci-aarch64           output-almalinux-9-oci-aarch64/AlmaLinux-8-OCI-9.5-20250129.aarch64.qcow2
+
+        version_major:
+          description: 'AlmaLinux major version'
+          required: true
+          default: '9'
+          type: choice
+          options:
+            - 10-kitten
+            - 10
+            - 9
+            - 8
+
+        type:
+          description: 'Image type'
+          required: true
+          default: 'azure'
+          type: choice
+          options:
+            - azure
+            - gencloud
+            - opennebula
+            - oci
+
+        store_as_artifact:
+          description: "Store images to the workflow Artifacts"
+          required: true
+          type: boolean
+          default: false
+
+        upload_to_s3:
+          description: "Upload to S3 Bucket"
+          required: true
+          type: boolean
+          default: false
+
+        notify_mattermost:
+          description: "Send notification to Mattermost"
+          required: true
+          type: boolean
+          default: false
+
+jobs:
+
+  start-runner:
+    timeout-minutes: 10              # normally it only takes 1-2 minutes
+    name: EC2 runner for ${{ matrix.variant }} ${{ inputs.type }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(format('["{0}"]', inputs.version_major )) }}
+        type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
+        exclude:
+          - variant: '10'
+          - type: 'oci'
+            variant: '10'
+          - type: 'oci'
+            variant: '10-kitten'
+
+    steps:
+    - name: Setup and start runner
+      uses: NextChapterSoftware/ec2-action-builder@v1.10
+      with:
+        github_token: ${{ secrets.GIT_HUB_TOKEN }}
+        aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws_region: ${{ secrets.AWS_REGION }}
+        ec2_ami_id: ${{ secrets.EC2_AMI_ID_AL9_AARCH64 }}           # Use AlmaLinux 9 aarch64 AMI
+        ec2_subnet_id: ${{ secrets.EC2_SUBNET_ID}}                  # Subnet and Security Group should match
+        ec2_security_group_id: ${{ secrets.EC2_SECURITY_GROUP_ID }} # Availability Zones list for 'a1.metal' Instance Type
+
+        ec2_instance_type: a1.metal         # bare-metal instance
+        ec2_root_disk_size_gb: "16"         # override default size which is too small for actions and tests stuff
+        ec2_root_disk_ebs_class: "gp3"      # use faster and cheeper storage instead of default 'gp2'
+        ec2_instance_ttl: 30                # Optional (default is 60 minutes)
+        ec2_spot_instance_strategy: None    # Other options are: SpotOnly, BestEffort, MaxPerformance
+        ec2_instance_tags: >                # Required for IAM role resource permission scoping
+          [
+            {"Key": "Project", "Value": "GitHub Actions Self-hosted Runners"}
+          ]
+
+  build-images:
+    needs: start-runner
+    name: ${{ matrix.variant }} ${{ inputs.type }} image
+    runs-on: ${{ github.run_id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(format('["{0}"]', inputs.version_major )) }}
+        type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
+        exclude:
+          - variant: '10'
+          - type: 'oci'
+            variant: '10'
+          - type: 'oci'
+            variant: '10-kitten'
+
+    env:
+      arch: aarch64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Update system
+      run: sudo dnf -y -q update
+
+    - name: Install extra packages
+      run: sudo dnf -y -q install unzip
+
+    - name: Prepare staff
+      run: |
+        # Packer options
+        packer_opts="-var qemu_binary=/usr/libexec/qemu-kvm"
+
+        # date+time stamp, YYYYMMDDhhmmss
+        time_stamp=$(date -u '+%Y%m%d%H%M%S')
+
+        # date stamp, YYYYMMDD
+        date_stamp=$(date -u '+%Y%m%d')
+
+        # Image type e.g. Azure, Vagrant Libvirt, ...
+        image_type=${{ inputs.type }}
+        image_type=${image_type//_/ }
+        image_type=${image_type^}
+
+        # Release version
+        if [[ ${{ inputs.version_major }} != *'kitten'* ]]; then
+          almalinux_release=https://repo.almalinux.org/almalinux/almalinux-release-latest-${{ inputs.version_major }}.${{ env.arch }}.rpm
+          # TODO: remove when AlmaLinux 10.0 is released
+          [ "${{ inputs.version_major }}" = "10" ] && almalinux_release=https://vault.almalinux.org/almalinux-release-latest-10-beta.${{ env.arch }}.rpm
+          release=$(rpm -q --qf="%{VERSION}\n" ${almalinux_release} 2>/dev/null)
+        fi
+
+        # Packer source for image set in .pkr.hcl configs, e.g. qemu.almalinux-9-gencloud-x86_64, qemu.almalinux-9-azure-aarch64, ...
+        packer_source=qemu.almalinux-${{ matrix.variant }}-${{ inputs.type }}-${{ env.arch }}
+
+        # Mask to locate output image file
+        output_mask=output-almalinux-${{ matrix.variant }}-${{ inputs.type }}-${{ env.arch }}/AlmaLinux-${{ inputs.version_major }}-*.${{ env.arch }}.qcow2
+
+        # AWS S3 path to store images
+        aws_s3_path=images/${{ matrix.variant }}/${release}/${{ inputs.type }}/${time_stamp}
+
+        # Overriding packer source, image mask and S3 path where necessary
+        case "${{ inputs.type }}${{ matrix.variant }}" in
+          azure8|azure9|azure10)
+            output_mask=output-almalinux-${{ matrix.variant }}-${{ inputs.type }}-${{ env.arch }}/AlmaLinux-${{ inputs.version_major }}-*.${{ env.arch }}.raw
+            ;;
+          digitalocean*)
+            output_mask=output-almalinux-${{ matrix.variant }}-${{ inputs.type }}-${{ env.arch }}/AlmaLinux-${{ inputs.version_major }}-DigitalOcean-*.${{ env.arch }}.qcow2
+            # TODO: Exclude digitalocean-import post-processor because of lack of DigitalOcean API token
+            # Operating System Version test fails for almaLinux 8.10. Need to refresh from the official repository
+            # https://github.com/digitalocean/marketplace-partners/blob/master/scripts/99-img-check.sh
+            packer_opts="${packer_opts} -except=digitalocean-import"
+            # TODO: Remove pvgrub_config role from ansible playbook as it is not implemented ???
+            sed -i '/role: pvgrub_config/d' ansible/roles/digitalocean_guest/meta/main.yml
+            ;;
+          vagrant_libvirt8)
+            packer_source=qemu.almalinux-${{ matrix.variant }}
+            output_mask=AlmaLinux-8-Vagrant-*.${{ env.arch }}.libvirt.box
+            aws_s3_path=images/${{ matrix.variant }}/${release}/vagrant/${time_stamp}
+            ;;
+          vagrant_libvirt9|vagrant_libvirt10)
+            packer_source=qemu.almalinux-${{ matrix.variant }}
+            output_mask=AlmaLinux-${{ matrix.variant }}-Vagrant-libvirt-*.${{ env.arch }}.box
+            aws_s3_path=images/${{ matrix.variant }}/${release}/vagrant/${time_stamp}
+            ;;
+          azure*kitten*)
+            packer_source=qemu.almalinux_kitten_10_${{ inputs.type }}_${{ env.arch }}
+            output_mask=output-almalinux_kitten_10_${{ inputs.type }}_${{ env.arch }}/AlmaLinux-Kitten-*.${{ env.arch }}*.raw
+            aws_s3_path=images/kitten/10/${{ inputs.type }}/${time_stamp}
+            ;;
+          vagrant_libvirt*kitten*)
+            packer_source=qemu.almalinux_kitten_10_${{ inputs.type }}_${{ env.arch }}
+            output_mask=AlmaLinux-Kitten-Vagrant-libvirt-10-*.${{ env.arch }}*.box
+            aws_s3_path=images/kitten/10/vagrant/${time_stamp}
+            ;;
+          *kitten*)
+            packer_source=qemu.almalinux_kitten_10_${{ inputs.type }}_${{ env.arch }}
+            output_mask=output-almalinux_kitten_10_${{ inputs.type }}_${{ env.arch }}/AlmaLinux-Kitten-*.${{ env.arch }}*.qcow2
+            aws_s3_path=images/kitten/10/${{ inputs.type }}/${time_stamp}
+            ;;
+        esac
+
+        echo "PACKER_OPTS=${packer_opts}" >> $GITHUB_ENV
+        echo "TIME_STAMP=${time_stamp}" >> $GITHUB_ENV
+        echo "DATE_STAMP=${date_stamp}" >> $GITHUB_ENV
+        echo "IMAGE_TYPE=${image_type}" >> $GITHUB_ENV
+        echo "RELEASE=${release}" >> "$GITHUB_ENV"
+        echo "packer_source=${packer_source}" >> $GITHUB_ENV
+        echo "output_mask=${output_mask}" >> $GITHUB_ENV
+        echo "AWS_S3_PATH=${aws_s3_path}" >> $GITHUB_ENV
+
+    - name: Install KVM
+      run: |
+        sudo dnf -y install qemu-kvm
+        sudo usermod --append -G kvm "$(id -un)"
+
+    - name: Enable KVM group perms
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Add Hashicorp repository
+      run: |
+        sudo dnf -y install dnf-utils
+        sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
+
+    - name: Install packer
+      run: |
+        sudo dnf -y install packer
+
+    - name: Install ansible
+      run: |
+        sudo dnf -y install epel-release
+        sudo dnf -y install ansible
+
+    - name: Initialize packer
+      run: |
+        sudo /usr/bin/packer init -upgrade .
+
+    - name: Build ${{ inputs.type }} image
+      run: |
+        sudo /usr/bin/packer build ${{ env.PACKER_OPTS }} -only=${{ env.packer_source }} .
+
+    - name: Locate image file, generate checksum
+      run: |
+        image_file=$(ls -1 ${{ env.output_mask }} | head -n 1)
+        [ "x${image_file}" = "x" ] && false
+        cd $(dirname ${image_file})
+        sudo sh -c "sha256sum $(basename ${image_file}) > $(basename ${image_file}).sha256sum"
+
+        echo "IMAGE_FILE=${image_file}" >> $GITHUB_ENV
+        echo "IMAGE_NAME=$(basename ${image_file})" >> $GITHUB_ENV
+
+    - uses: actions/upload-artifact@v4
+      name: Store image as artifact
+      id: image-artifact
+      if: inputs.store_as_artifact
+      with:
+        compression-level: 1
+        name: ${{ env.IMAGE_NAME }}
+        path: ${{ env.IMAGE_FILE }}
+
+    - uses: actions/upload-artifact@v4
+      name: Store checksum as artifact
+      id: checksum-artifact
+      if: inputs.store_as_artifact
+      with:
+        compression-level: 1
+        name: ${{ env.IMAGE_NAME }}.sha256sum
+        path: ${{ env.IMAGE_FILE }}.sha256sum
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4.0.2
+      if: inputs.upload_to_s3
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Install aws CLI
+      if: inputs.upload_to_s3
+      shell: bash
+      run: |
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+        unzip -qq awscliv2.zip
+        sudo ./aws/install
+
+    - name: Publish to S3 Bucket and put object tagging with aws CLI
+      if: inputs.upload_to_s3
+      run: |
+        cd $(dirname ${{ env.IMAGE_FILE }})
+        for object in ${{ env.IMAGE_NAME }} ${{ env.IMAGE_NAME }}.sha256sum; do
+          aws s3 cp ${object} s3://${{ vars.AWS_S3_BUCKET }}/${{ env.AWS_S3_PATH }}/
+          aws s3api put-object-tagging --bucket ${{ vars.AWS_S3_BUCKET }} --key ${{ env.AWS_S3_PATH }}/${object} --tagging 'TagSet={Key=public,Value=yes}'
+        done
+
+    - name: Put S3 Bucket download URLs
+      if: inputs.upload_to_s3
+      uses: actions/github-script@v7
+      with:
+        result-encoding: string
+        script: |
+          core.summary
+              .addHeading('S3 Bucket download URLs', '4')
+              .addLink('${{ env.IMAGE_NAME }}.sha256sum', 'https://${{ vars.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}.sha256sum')
+              .addBreak()
+              .addLink('${{ env.IMAGE_NAME }}', 'https://${{ vars.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}')
+              .write()
+
+    - name: Send notification to Mattermost (Artifacts)
+      uses: mattermost/action-mattermost-notify@master
+      if: ${{ inputs.store_as_artifact == 'true' && inputs.notify_mattermost == 'true' && inputs.upload_to_s3 == 'false' }}
+      with:
+        MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+        MATTERMOST_CHANNEL: ${{ secrets.MATTERMOST_CHANNEL }}
+        MATTERMOST_USERNAME: ${{ github.triggering_actor }}
+        TEXT: |
+          **AlmaLinux OS ${{ env.RELEASE }}} ${{ env.arch }} Cloud Images** `${{ env.TIME_STAMP }}` generated by the GitHub [Action](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          :almalinux: **${{ env.IMAGE_TYPE }}**
+
+          - CHECKSUM(SHA256) [zipped]: [${{ env.IMAGE_NAME }}.sha256sum](${{ steps.checksum-artifact.outputs.artifact-url }})
+
+          - Image [zipped]: [${{ env.IMAGE_NAME }}](${{ steps.image-artifact.outputs.artifact-url }})
+
+    - name: Send notification to Mattermost (AWS S3 links)
+      uses: mattermost/action-mattermost-notify@master
+      if: ${{ inputs.upload_to_s3 == 'true' && inputs.notify_mattermost == 'true' }}
+      with:
+        MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+        MATTERMOST_CHANNEL: ${{ secrets.MATTERMOST_CHANNEL }}
+        MATTERMOST_USERNAME: ${{ github.triggering_actor }}
+        TEXT: |
+          **AlmaLinux OS ${{ env.RELEASE }}} ${{ env.arch }} Cloud Images** `${{ env.TIME_STAMP }}` generated by the GitHub [Action](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          :almalinux: **${{ env.IMAGE_TYPE }}**
+
+          - CHECKSUM(SHA256): [${{ env.IMAGE_NAME }}.sha256sum](https://${{ vars.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}.sha256sum)
+
+          - Image: [${{ env.IMAGE_NAME }}](https://${{ vars.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }})
