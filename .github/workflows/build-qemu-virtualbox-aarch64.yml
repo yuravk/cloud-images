@@ -96,72 +96,72 @@ on:
 
 jobs:
 
-  start-runner:
-    timeout-minutes: 10              # normally it only takes 1-2 minutes
-    name: EC2 runner for ${{ matrix.variant }} ${{ inputs.type }}
-    runs-on: ubuntu-24.04
-    permissions:
-      actions: write
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: ${{ fromJSON(format('["{0}"]', inputs.version_major )) }}
-        type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
-        exclude:
-          - variant: '10'
-          - variant: '10-x86_64_v2'
-          - type: 'azure'
-            variant: '10-kitten-x86_64_v2'
-          - type: 'oci'
-            variant: '10'
-          - type: 'oci'
-            variant: '10-x86_64_v2'
-          - type: 'oci'
-            variant: '10-kitten'
-          - type: 'oci'
-            variant: '10-kitten-x86_64_v2'
-          - type: 'vagrant_virtualbox'
-            variant: '10-kitten'
-          - type: 'vagrant_virtualbox'
-            variant: '10-kitten-x86_64_v2'
-          - type: 'digitalocean'
-            variant: '10-kitten'
-          - type: 'digitalocean'
-            variant: '10-kitten-x86_64_v2'
+  # start-runner:
+  #   timeout-minutes: 10              # normally it only takes 1-2 minutes
+  #   name: EC2 runner for ${{ matrix.variant }} ${{ inputs.type }}
+  #   runs-on: ubuntu-24.04
+  #   permissions:
+  #     actions: write
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       variant: ${{ fromJSON(format('["{0}"]', inputs.version_major )) }}
+  #       type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
+  #       exclude:
+  #         - variant: '10'
+  #         - variant: '10-x86_64_v2'
+  #         - type: 'azure'
+  #           variant: '10-kitten-x86_64_v2'
+  #         - type: 'oci'
+  #           variant: '10'
+  #         - type: 'oci'
+  #           variant: '10-x86_64_v2'
+  #         - type: 'oci'
+  #           variant: '10-kitten'
+  #         - type: 'oci'
+  #           variant: '10-kitten-x86_64_v2'
+  #         - type: 'vagrant_virtualbox'
+  #           variant: '10-kitten'
+  #         - type: 'vagrant_virtualbox'
+  #           variant: '10-kitten-x86_64_v2'
+  #         - type: 'digitalocean'
+  #           variant: '10-kitten'
+  #         - type: 'digitalocean'
+  #           variant: '10-kitten-x86_64_v2'
 
 
-    steps:
+  #   steps:
 
-    - name: Setup and start the runner
-      id: start-ec2-runner
-      uses: NextChapterSoftware/ec2-action-builder@v1.5
-      with:
-        github_token: ${{ secrets.GIT_HUB_TOKEN }}
-        aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        # aws_region: ${{ secrets.AWS_REGION }}
-        aws_region: us-east-1a
-        # TODO: EC2_AMI_ID_AL9 (9-th AMI) should be used for Kitten 10 until appliance-tools isn't available
-        # ec2_ami_id: ${{ secrets[format('EC2_AMI_ID_AL{0}', ( inputs.version_major == '10-kitten' && '9' || inputs.version_major ))] }}
-        # ec2_ami_id: ami-0e6ac40472432aeb6 # Ubuntu 24.04
-        ec2_ami_id: ami-03f349361fe97c020 # AlmaLinux 9.5
-        ec2_subnet_id: ${{ secrets.EC2_SUBNET_ID}}
-        ec2_security_group_id: ${{ secrets.EC2_SECURITY_GROUP_ID }}
+    # - name: Setup and start the runner
+    #   id: start-ec2-runner
+    #   uses: NextChapterSoftware/ec2-action-builder@v1.5
+    #   with:
+    #     github_token: ${{ secrets.GIT_HUB_TOKEN }}
+    #     aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    #     aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    #     # aws_region: ${{ secrets.AWS_REGION }}
+    #     aws_region: us-east-1a
+    #     # TODO: EC2_AMI_ID_AL9 (9-th AMI) should be used for Kitten 10 until appliance-tools isn't available
+    #     # ec2_ami_id: ${{ secrets[format('EC2_AMI_ID_AL{0}', ( inputs.version_major == '10-kitten' && '9' || inputs.version_major ))] }}
+    #     # ec2_ami_id: ami-0e6ac40472432aeb6 # Ubuntu 24.04
+    #     ec2_ami_id: ami-03f349361fe97c020 # AlmaLinux 9.5
+    #     ec2_subnet_id: ${{ secrets.EC2_SUBNET_ID}}
+    #     ec2_security_group_id: ${{ secrets.EC2_SECURITY_GROUP_ID }}
 
-        ec2_instance_type: a1.metal         # 2 vCPU and 4 GiM Memory
-                                            # t4g.medium, c7gd.metal, a1.metal
-        ec2_root_disk_size_gb: "16"         # override default size which is too small for images
-        ec2_root_disk_ebs_class: "gp3"      # use faster and cheeper storage instead of default 'gp2'
-        ec2_instance_ttl: 60                # Optional (default is 60 minutes)
-        ec2_spot_instance_strategy: None    # Other options are: SpotOnly, BestEffort, MaxPerformance
-        ec2_instance_tags: >                # Required for IAM role resource permission scoping
-          [
-              {"Key": "Project", "Value": "GitHub Actions Self-hosted Runners"}
-          ]
+    #     ec2_instance_type: a1.metal         # 2 vCPU and 4 GiM Memory
+    #                                         # t4g.medium, c7gd.metal, a1.metal
+    #     ec2_root_disk_size_gb: "16"         # override default size which is too small for images
+    #     ec2_root_disk_ebs_class: "gp3"      # use faster and cheeper storage instead of default 'gp2'
+    #     ec2_instance_ttl: 60                # Optional (default is 60 minutes)
+    #     ec2_spot_instance_strategy: None    # Other options are: SpotOnly, BestEffort, MaxPerformance
+    #     ec2_instance_tags: >                # Required for IAM role resource permission scoping
+    #       [
+    #           {"Key": "Project", "Value": "GitHub Actions Self-hosted Runners"}
+    #       ]
 
   build-images:
     name: ${{ matrix.variant }} ${{ inputs.type }} image
-    runs-on: ${{ github.run_id }}
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
@@ -190,7 +190,7 @@ jobs:
             variant: '10-kitten-x86_64_v2'
 
     env:
-      arch: aarch64
+      arch: x86_64
 
     steps:
     - uses: actions/checkout@v4
