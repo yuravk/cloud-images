@@ -372,7 +372,7 @@ jobs:
         # esac
 
         echo "PACKER_OPTS=${packer_opts}" >> $GITHUB_ENV
-        echo "UBUNTU_CODENAME=${ubuntu_codename}" >> $GITHUB_ENV
+        # echo "UBUNTU_CODENAME=${ubuntu_codename}" >> $GITHUB_ENV
         echo "TIME_STAMP=${time_stamp}" >> $GITHUB_ENV
         echo "DATE_STAMP=${date_stamp}" >> $GITHUB_ENV
         echo "IMAGE_TYPE=${image_type}" >> $GITHUB_ENV
