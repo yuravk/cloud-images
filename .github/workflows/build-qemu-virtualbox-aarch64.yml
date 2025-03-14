@@ -402,12 +402,12 @@ jobs:
         # echo "[Debug] Nested virtualization support:"
         # sudo cat /sys/module/kvm_amd/parameters/nested
 
-        echo "vmx|svm CPU flags:"
-        grep -E '(vmx|svm)' /proc/cpuinfo
-        echo "KVM modules:"
-        sudo lsmod | grep kvm
-        echo "Nested virtualization support:"
-        sudo cat /sys/module/*kvm*/parameters/nested
+        # echo "vmx|svm CPU flags:"
+        # grep -E '(vmx|svm)' /proc/cpuinfo
+        # echo "KVM modules:"
+        # sudo lsmod | grep kvm
+        # echo "Nested virtualization support:"
+        # sudo cat /sys/module/*kvm*/parameters/nested
 
     - name: Enable KVM group perms
       if: inputs.type != 'vagrant_virtualbox' && inputs.type != 'vagrant_vmware'
