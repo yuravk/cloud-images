@@ -1,0 +1,298 @@
+name: build-images
+
+on:
+  workflow_dispatch:
+      inputs:
+
+        # Available builds under qemu-kvm:
+
+        #  qemu.almalinux-8-gencloud-x86_64             output-almalinux-8-gencloud-x86_64/AlmaLinux-8-GenericCloud-8.10-20250128.x86_64.qcow2
+        #  qemu.almalinux-8-gencloud-aarch64            output-almalinux-8-gencloud-aarch64/AlmaLinux-8-GenericCloud-8.10-20250128.aarch.qcow2
+        #  qemu.almalinux-9-gencloud-x86_64             output-almalinux-9-gencloud-x86_64/AlmaLinux-9-GenericCloud-9.5-20250128.x86_64.qcow2
+        #  qemu.almalinux-9-gencloud-aarch64            output-almalinux-9-gencloud-aarch64/AlmaLinux-9-GenericCloud-9.5-20250128.aarch.qcow2
+        #  qemu.almalinux_kitten_10_gencloud_x86_64     output-almalinux_kitten_10_gencloud_x86_64/AlmaLinux-Kitten-GenericCloud-10-20250129.0.x86_64.qcow2
+        #  qemu.almalinux_kitten_10_gencloud_x86_64_v2  output-almalinux_kitten_10_gencloud_x86_64_v2/AlmaLinux-Kitten-GenericCloud-10-20250129.0.x86_64_v2.qcow2
+        #  qemu.almalinux_kitten_10_gencloud_aarch64    output-almalinux_kitten_10_gencloud_aarch64/AlmaLinux-Kitten-GenericCloud-10-20250129.0.aarch64.qcow2
+
+        #  qemu.almalinux-8-azure-x86_64          output-almalinux-8-azure-x86_64/AlmaLinux-8-Azure-8.10-20250128.x86_64.raw
+        #  qemu.almalinux-8-azure-aarch64         output-almalinux-8-azure-aarch64/AlmaLinux-8-Azure-8.10-20250128.aarch64.raw
+        #  qemu.almalinux-9-azure-x86_64          output-almalinux-9-azure-x86_64/AlmaLinux-9-Azure-9.5-20250128.x86_64.raw
+        #  qemu.almalinux-9-azure-aarch64         output-almalinux-9-azure-aarch64/AlmaLinux-9-Azure-9.5-202501280.aarch64.raw
+        #  qemu.almalinux_9_azure_aarch64_64k     output-almalinux-9-azure-aarch64/AlmaLinux-9-Azure-9.5-202501280-64k.aarch64.raw
+        #  qemu.almalinux_kitten_10_azure_x86_64  output-almalinux_kitten_10_azure_x86_64/AlmaLinux-Kitten-Azure-10-20250129.0.x86_64.raw
+        #  qemu.almalinux_kitten_10_azure_aarch64 output-almalinux_kitten_10_azure_aarch64/AlmaLinux-Kitten-Azure-10-20250129.0.aarch64.raw
+        #  qemu.almalinux_kitten_10_azure_aarch64_64k  output-almalinux_kitten_10_azure_aarch64/AlmaLinux-Kitten-64k-Azure-10-20250129.0.aarch64.raw
+
+        #  qemu.almalinux-8                                   AlmaLinux-8-Vagrant-8.10-20250204.x86_64.libvirt.box
+        #  qemu.almalinux-9                                   AlmaLinux-9-Vagrant-libvirt-9.5-20250201.x86_64.box
+        #  qemu.almalinux_kitten_10_vagrant_libvirt_x86_64    AlmaLinux-Kitten-Vagrant-libvirt-10-20250201.0.x86_64.box
+        #  qemu.almalinux_kitten_10_vagrant_libvirt_x86_64_v2 AlmaLinux-Kitten-Vagrant-libvirt-10-20250201.0.x86_64_v2.box
+
+        #  qemu.almalinux-8-opennebula-x86_64                 output-almalinux-8-opennebula-x86_64/AlmaLinux-8-OpenNebula-8.10-20250129.x86_64.qcow2
+        #  qemu.almalinux-8-opennebula-aarch64                output-almalinux-8-opennebula-aarch64/AlmaLinux-8-OpenNebula-8.10-20250129.aarch64.qcow2
+        #  qemu.almalinux-9-opennebula-x86_64                 output-almalinux-9-opennebula-x86_64/AlmaLinux-9-OpenNebula-9.5-20250129.x86_64.qcow2
+        #  qemu.almalinux-9-opennebula-aarch64                output-almalinux-9-opennebula-aarch64/AlmaLinux-9-OpenNebula-9.5-20250129.aarch64.qcow2
+        #  qemu.almalinux_kitten_10_opennebula_x86_64         output-almalinux_kitten_10_opennebula_x86_64/AlmaLinux-Kitten-OpenNebula-10-20250129.0.x86_64.qcow2
+        #  qemu.almalinux_kitten_10_opennebula_x86_64_v2      output-almalinux_kitten_10_opennebula_x86_64_v2/AlmaLinux-Kitten-OpenNebula-10-20250129.0.x86_64_v2.qcow2
+        #  qemu.almalinux_kitten_10_opennebula_aarch64        output-almalinux_kitten_10_opennebula_aarch64/AlmaLinux-Kitten-OpenNebula-10-20250129.0.aarch64.qcow2
+
+        #  qemu.almalinux-8-oci-x86_64            output-almalinux-8-oci-x86_64/AlmaLinux-8-OCI-8.10-20250129.x86_64.qcow2
+        #  qemu.almalinux-8-oci-aarch64           output-almalinux-8-oci-aarch64/AlmaLinux-8-OCI-8.10-20250129.aarch64.qcow2
+        #  qemu.almalinux-9-oci-x86_64            output-almalinux-9-oci-x86_64/AlmaLinux-8-OCI-9.5-20250129.x86_64.qcow2
+        #  qemu.almalinux-9-oci-aarch64           output-almalinux-9-oci-aarch64/AlmaLinux-8-OCI-9.5-20250129.aarch64.qcow2
+
+        #  qemu.almalinux-8-digitalocean-x86_64   output-almalinux-8-digitalocean-x86_64/AlmaLinux-9-DigitalOcean-8.10-20250212.x86_64.qcow2
+        #  qemu.almalinux-9-digitalocean-x86_64   output-almalinux-9-digitalocean-x86_64/AlmaLinux-9-DigitalOcean-9.5-20250212.x86_64.qcow2
+
+
+        # Available builds under VirtualBox:
+
+        #  virtualbox-iso.almalinux-8             AlmaLinux-9-Vagrant-virtualbox-8.10-20250201.x86_64.box
+        #  virtualbox-iso.almalinux-9             AlmaLinux-9-Vagrant-virtualbox-9.5-20250201.x86_64.box
+
+        # Available builds under VMware
+
+        #  vmware-iso.almalinux-8                 AlmaLinux-8-Vagrant-8.10-20250213.x86_64.vmware.box
+        #  vmware-iso.almalinux-9                 AlmaLinux-9-Vagrant-vmware-9.5-20250213.x86_64.box
+
+        version_major:
+          description: 'AlmaLinux major version'
+          required: true
+          default: '9'
+          type: choice
+          options:
+            - 10-kitten
+            - 9
+            - 8
+
+        aarch64:
+          description: "Build aarch64 image"
+          required: true
+          type: boolean
+          default: false
+
+        aarch64_runner:
+          description: 'aarch64 runner'
+          required: true
+          default: 'self-hosted'
+          type: choice
+          options:
+            - self-hosted
+            - aws-ec2
+
+        type:
+          description: 'Image type'
+          required: true
+          default: 'azure'
+          type: choice
+          options:
+            - azure
+            - digitalocean        # TODO: require data to work with the cloud, such as: bucket, access key, secret key, etc.
+            - gencloud
+            - oci
+            - opennebula
+            - vagrant_libvirt
+            - vagrant_virtualbox
+            - vagrant_vmware      # TODO: on self-hosted runner
+                                  # On GitHub runner fails with: Error getting SSH address: IP lookup failed: none of the found device(s) [vmnet8] have a DHCP lease for MAC address
+
+        store_as_artifact:
+          description: "Store images to the workflow Artifacts"
+          required: true
+          type: boolean
+          default: false
+
+        upload_to_s3:
+          description: "Upload to S3 Bucket"
+          required: true
+          type: boolean
+          default: false
+
+        vagrant_publish:
+          description: "Publish to Vagrant Cloud (vagrant_* types only)"
+          required: true
+          type: boolean
+          default: false
+
+        notify_mattermost:
+          description: "Send notification to Mattermost"
+          required: true
+          type: boolean
+          default: false
+
+jobs:
+  init-data:
+    name: Initialize common data
+    runs-on: ubuntu-24.04
+    outputs:
+      time_stamp: ${{ steps.time-stamp.outputs.time_stamp }}
+      date_stamp: ${{ steps.date-stamp.outputs.date_stamp }}
+    steps:
+      - name: Date+time stamp
+        id: time-stamp
+        run: |
+          # date+time stamp, YYYYMMDDhhmmss
+          echo "time_stamp=$(date -u '+%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+      - name: Date stamp
+        id: date-stamp
+        run: |
+          # date stamp, YYYYMMDD
+          echo "date_stamp=$(date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
+
+  build-x86_64:
+    name: ${{ matrix.variant }} ${{ inputs.type }} x86_64 image
+    needs: [init-data]
+    runs-on: ${{ inputs.type == 'vagrant_vmware' && 'self-hosted' || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(format('["{0}"]', ( inputs.version_major == '10-kitten' && '10-kitten", "10-kitten-x86_64_v2' || ( inputs.version_major == '10' && '10", "10-x86_64_v2' || inputs.version_major ) ) )) }}
+        type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
+        exclude:
+          - variant: '10'
+          - variant: '10-x86_64_v2'
+          - type: 'azure'
+            variant: '10-kitten-x86_64_v2'
+          - type: 'oci'
+            variant: '10-x86_64_v2'
+          - type: 'oci'
+            variant: '10-kitten'
+          - type: 'oci'
+            variant: '10-kitten-x86_64_v2'
+          - type: 'vagrant_virtualbox'
+            variant: '10-kitten'
+          - type: 'vagrant_virtualbox'
+            variant: '10-kitten-x86_64_v2'
+          - type: 'digitalocean'
+            variant: '10-kitten'
+          - type: 'digitalocean'
+            variant: '10-kitten-x86_64_v2'
+
+    env:
+      ARCH: x86_64
+      TIME_STAMP: ${{ needs.init-data.outputs.time_stamp }}
+      DATE_STAMP: ${{ needs.init-data.outputs.date_stamp }}
+
+    steps:
+      - name: Clean up runner
+        if: inputs.type == 'vagrant_vmware'
+        run: sudo rm -rf ansible output-*
+
+      - name: Checkout ${{ github.action_repository }}
+        uses: actions/checkout@v4
+
+      - uses: ./.github/actions/shared-steps
+        name: ${{ matrix.variant }} ${{ inputs.type }} ${{ env.ARCH }} image
+        with:
+          type: ${{ matrix.type }}
+          variant: ${{ matrix.variant }}
+          arch: ${{ env.ARCH }}
+          S3_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+          MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
+          HCP_CLIENT_ID: ${{ secrets.HCP_CLIENT_ID }}
+          HCP_CLIENT_SECRET: ${{ secrets.HCP_CLIENT_SECRET }}
+          HCP_ORG: ${{ vars.HCP_ORG }}
+          vagrant_publish: ${{ inputs.vagrant_publish }}
+          store_as_artifact: ${{ inputs.store_as_artifact }}
+          upload_to_s3: ${{ inputs.upload_to_s3 }}
+          notify_mattermost: ${{ inputs.notify_mattermost }}
+
+
+  start-aarch64-runner:
+    name: ${{ matrix.variant }} ${{ inputs.type }} aarch64 runner
+    if: inputs.aarch64
+    runs-on: ubuntu-24.04
+    needs: [init-data]
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(format('["{0}"]', ( (inputs.type == 'azure' && inputs.version_major == '9' ) && '9", "9-64k' || ( (inputs.type == 'azure' && inputs.version_major == '10-kitten' ) && '10-kitten", "10-kitten-64k' || inputs.version_major ) ) )) }}
+        type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
+        exclude:
+          - variant: '10'
+          - type: 'vagrant_libvirt'
+          - type: 'vagrant_virtualbox'
+          - type: 'vagrant_vmware'
+          - type: 'digitalocean'
+          - type: 'oci'
+            variant: '10-kitten'
+
+    steps:
+    - name: Setup and start runner
+      if: inputs.aarch64_runner == 'aws-ec2'
+      uses: NextChapterSoftware/ec2-action-builder@v1.10
+      with:
+        github_token: ${{ secrets.GIT_HUB_TOKEN }}
+        aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws_region: ${{ secrets.AWS_REGION }}
+        ec2_ami_id: ${{ secrets.EC2_AMI_ID_AL9_AARCH64 }}           # Use AlmaLinux 9 aarch64 AMI
+        ec2_subnet_id: ${{ secrets.EC2_SUBNET_ID}}                  # Subnet and Security Group should match
+        ec2_security_group_id: ${{ secrets.EC2_SECURITY_GROUP_ID }} # Availability Zones list for 'a1.metal' Instance Type
+
+        ec2_instance_type: a1.metal         # t4g.medium bare-metal instance
+        ec2_root_disk_size_gb: "16"         # override default size which is too small for actions and tests stuff
+        ec2_root_disk_ebs_class: "gp3"      # use faster and cheeper storage instead of default 'gp2'
+        ec2_instance_ttl: 30                # Optional (default is 60 minutes)
+        ec2_spot_instance_strategy: None    # Other options are: SpotOnly, BestEffort, MaxPerformance
+        ec2_instance_tags: >                # Required for IAM role resource permission scoping
+          [
+            {"Key": "Project", "Value": "GitHub Actions Self-hosted Runners"}
+          ]
+
+  build-aarch64:
+    name: ${{ matrix.variant }} ${{ inputs.type }} aarch64 image
+    if: inputs.aarch64
+    needs: [init-data, start-aarch64-runner]
+    runs-on: ${{ inputs.aarch64_runner == 'aws-ec2' && github.run_id || 'self-hosted' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # variant: ${{ fromJSON(format('["{0}"]', inputs.version_major )) }}
+        variant: ${{ fromJSON(format('["{0}"]', ( (inputs.type == 'azure' && inputs.version_major == '9' ) && '9", "9-64k' || ( (inputs.type == 'azure' && inputs.version_major == '10-kitten' ) && '10-kitten", "10-kitten-64k' || inputs.version_major ) ) )) }}
+        type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
+        exclude:
+          - variant: '10'
+          - type: 'vagrant_libvirt'
+          - type: 'vagrant_virtualbox'
+          - type: 'vagrant_vmware'
+          - type: 'digitalocean'
+          - type: 'oci'
+            variant: '10-kitten'
+
+    env:
+      ARCH: aarch64
+      TIME_STAMP: ${{ needs.init-data.outputs.time_stamp }}
+      DATE_STAMP: ${{ needs.init-data.outputs.date_stamp }}
+
+    steps:
+      - name: Clean up runner
+        if: inputs.type == 'vagrant_vmware'
+        run: sudo rm -rf ansible output-*
+
+      - name: Checkout ${{ github.action_repository }}
+        uses: actions/checkout@v4
+
+      - uses: ./.github/actions/shared-steps
+        name: ${{ matrix.variant }} ${{ inputs.type }} ${{ env.ARCH }} image
+        with:
+          type: ${{ matrix.type }}
+          variant: ${{ matrix.variant }}
+          arch: ${{ env.ARCH }}
+          S3_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+          MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
+          HCP_CLIENT_ID: ${{ secrets.HCP_CLIENT_ID }}
+          HCP_CLIENT_SECRET: ${{ secrets.HCP_CLIENT_SECRET }}
+          HCP_ORG: ${{ vars.HCP_ORG }}
+          vagrant_publish: 'false'
+          store_as_artifact: ${{ inputs.store_as_artifact }}
+          upload_to_s3: ${{ inputs.upload_to_s3 }}
+          notify_mattermost: ${{ inputs.notify_mattermost }}
