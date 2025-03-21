@@ -256,6 +256,7 @@ runs:
             ubuntu)
               sudo apt-get -y install build-essential linux-headers-generic
               sudo apt-get -y install libpcsclite1 libxcb-render0 libxcb-shm0 libxi6 libxinerama1 libxcursor1 libxtst6 libxml2-dev libc6-dev pcscd libpulse0 libasound2t64
+              ;;
             rhel)
               sudo dnf -y groupinstall 'development tools'
               sudo dnf -y install pcsc-lite pcsc-lite-libs libxcb libxcb-devel libXi libXi-devel libXinerama libXinerama-devel libXcursor libXcursor-devel libXtst libXtst-devel libxml2 libxml2-devel glibc-devel pcsc-lite pcsc-lite-libs pulseaudio-libs pulseaudio-libs-devel alsa-lib GConf2 GConf2-devel
