@@ -246,7 +246,7 @@ jobs:
         ec2_subnet_id: ${{ secrets.EC2_SUBNET_ID}}                  # Subnet and Security Group should match
         ec2_security_group_id: ${{ secrets.EC2_SECURITY_GROUP_ID }} # Availability Zones list for 'a1.metal' Instance Type
 
-        ec2_instance_type: t3.medium         # .metal instance type
+        ec2_instance_type: ${{ matrix.arch == 'x86_64' && 't3.medium' || 't4g.medium' }}         # .metal instance type
                                             # aarcch64 - t4g.medium a1.metal
                                             # x86_64 - t3.medium c5n.metal
         ec2_root_disk_size_gb: "16"         # override default size which is too small for actions and tests stuff
