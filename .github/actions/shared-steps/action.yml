@@ -267,6 +267,7 @@ runs:
           esac
 
           sudo ./VMware-Workstation-${ws_version}-${ws_build}.x86_64.bundle --console --eulas-agreed --required
+          lsmod | grep -E 'vmnet|vmmon' || true
         else
           true
         fi
