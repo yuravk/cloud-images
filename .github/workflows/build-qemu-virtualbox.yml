@@ -139,7 +139,7 @@ jobs:
           # date stamp, YYYYMMDD
           echo "date_stamp=$(date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
 
-  build-x86_64:
+  build-gh-hosted:
     name: ${{ matrix.variant }} ${{ inputs.type }} x86_64 image
     needs: [init-data]
     # runs-on: ${{ inputs.type == 'vagrant_vmware' && 'self-hosted' || 'ubuntu-24.04' }}
@@ -206,7 +206,7 @@ jobs:
 
 
   start-self-hosted-runner:
-    name: ${{ matrix.variant }} ${{ inputs.type }} self-hosted runner
+    name: ${{ matrix.variant }} ${{ inputs.type }} ${{ matrix.arch }} runner
     if: inputs.self-hosted
     runs-on: ubuntu-24.04
     needs: [init-data]
@@ -257,7 +257,7 @@ jobs:
           ]
 
   build-self-hosted:
-    name: ${{ matrix.variant }} ${{ inputs.type }} self-hosted image
+    name: ${{ matrix.variant }} ${{ inputs.type }} ${{ matrix.arch }} image
     if: inputs.self-hosted
     needs: [init-data, start-self-hosted-runner]
     runs-on: ${{ inputs.self_hosted_runner == 'aws-ec2' && github.run_id || 'self-hosted' }}
