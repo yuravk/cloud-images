@@ -57,7 +57,7 @@ runs:
             ;;
           rhel)
             sudo dnf -y -q update
-            sudo dnf -y -q install unzip
+            sudo dnf -y -q install unzip wget
             ;;
         esac
 
