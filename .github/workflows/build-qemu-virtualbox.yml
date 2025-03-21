@@ -65,14 +65,14 @@ on:
             - 9
             - 8
 
-        aarch64:
-          description: "Build aarch64 image"
+        self-hosted:
+          description: "Allow self-hosted runner"
           required: true
           type: boolean
           default: false
 
-        aarch64_runner:
-          description: 'aarch64 runner'
+        self_hosted_runner:
+          description: 'self-hosted runner'
           required: true
           default: 'self-hosted'
           type: choice
@@ -142,7 +142,8 @@ jobs:
   build-x86_64:
     name: ${{ matrix.variant }} ${{ inputs.type }} x86_64 image
     needs: [init-data]
-    runs-on: ${{ inputs.type == 'vagrant_vmware' && 'self-hosted' || 'ubuntu-24.04' }}
+    # runs-on: ${{ inputs.type == 'vagrant_vmware' && 'self-hosted' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -150,6 +151,7 @@ jobs:
         type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
         exclude:
           - variant: '10'
+          - type: 'vagrant_vmware'
           - variant: '10-x86_64_v2'
           - type: 'azure'
             variant: '10-kitten-x86_64_v2'
@@ -187,6 +189,7 @@ jobs:
           type: ${{ matrix.type }}
           variant: ${{ matrix.variant }}
           arch: ${{ env.ARCH }}
+          runner_os: ubuntu
           S3_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           S3_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -202,9 +205,9 @@ jobs:
           notify_mattermost: ${{ inputs.notify_mattermost }}
 
 
-  start-aarch64-runner:
-    name: ${{ matrix.variant }} ${{ inputs.type }} aarch64 runner
-    if: inputs.aarch64
+  start-self-hosted-runner:
+    name: ${{ matrix.variant }} ${{ inputs.type }} self-hosted runner
+    if: inputs.self-hosted
     runs-on: ubuntu-24.04
     needs: [init-data]
     strategy:
@@ -212,25 +215,34 @@ jobs:
       matrix:
         variant: ${{ fromJSON(format('["{0}"]', ( (inputs.type == 'azure' && inputs.version_major == '9' ) && '9", "9-64k' || ( (inputs.type == 'azure' && inputs.version_major == '10-kitten' ) && '10-kitten", "10-kitten-64k' || inputs.version_major ) ) )) }}
         type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
+        arch: [x86_64,  aarch64]
         exclude:
           - variant: '10'
           - type: 'vagrant_libvirt'
           - type: 'vagrant_virtualbox'
           - type: 'vagrant_vmware'
-          - type: 'digitalocean'
+            arch: 'aarch64'
           - type: 'oci'
             variant: '10-kitten'
+          - arch: 'x86_64'
+            type:
+              - 'digitalocean'
+              - 'azure'
+              - 'gencloud'
+              - 'opennebula'
+              - 'oci'
 
     steps:
     - name: Setup and start runner
-      if: inputs.aarch64_runner == 'aws-ec2'
+      if: inputs.self_hosted_runner == 'aws-ec2'
       uses: NextChapterSoftware/ec2-action-builder@v1.10
       with:
         github_token: ${{ secrets.GIT_HUB_TOKEN }}
         aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws_region: ${{ secrets.AWS_REGION }}
-        ec2_ami_id: ${{ secrets.EC2_AMI_ID_AL9_AARCH64 }}           # Use AlmaLinux 9 aarch64 AMI
+        # ec2_ami_id: ${{ secrets.EC2_AMI_ID_AL9_AARCH64 }}           # Use AlmaLinux 9 aarch64 AMI
+        ec2_ami_id: ${{ secrets[format('EC2_AMI_ID_AL9_{0}', ( matrix.arch == 'x86_64' && 'X86_64' || 'AARCH64' ))] }}
         ec2_subnet_id: ${{ secrets.EC2_SUBNET_ID}}                  # Subnet and Security Group should match
         ec2_security_group_id: ${{ secrets.EC2_SECURITY_GROUP_ID }} # Availability Zones list for 'a1.metal' Instance Type
 
@@ -244,28 +256,36 @@ jobs:
             {"Key": "Project", "Value": "GitHub Actions Self-hosted Runners"}
           ]
 
-  build-aarch64:
-    name: ${{ matrix.variant }} ${{ inputs.type }} aarch64 image
-    if: inputs.aarch64
-    needs: [init-data, start-aarch64-runner]
-    runs-on: ${{ inputs.aarch64_runner == 'aws-ec2' && github.run_id || 'self-hosted' }}
+  build-self-hosted:
+    name: ${{ matrix.variant }} ${{ inputs.type }} self-hosted image
+    if: inputs.self-hosted
+    needs: [init-data, start-self-hosted-runner]
+    runs-on: ${{ inputs.self_hosted_runner == 'aws-ec2' && github.run_id || 'self-hosted' }}
     strategy:
       fail-fast: false
       matrix:
         # variant: ${{ fromJSON(format('["{0}"]', inputs.version_major )) }}
         variant: ${{ fromJSON(format('["{0}"]', ( (inputs.type == 'azure' && inputs.version_major == '9' ) && '9", "9-64k' || ( (inputs.type == 'azure' && inputs.version_major == '10-kitten' ) && '10-kitten", "10-kitten-64k' || inputs.version_major ) ) )) }}
         type: ${{ fromJSON(format('["{0}"]', inputs.type )) }}
+        arch: [x86_64,  aarch64]
         exclude:
           - variant: '10'
           - type: 'vagrant_libvirt'
           - type: 'vagrant_virtualbox'
           - type: 'vagrant_vmware'
-          - type: 'digitalocean'
+            arch: 'aarch64'
           - type: 'oci'
             variant: '10-kitten'
+          - arch: 'x86_64'
+            type:
+              - 'digitalocean'
+              - 'azure'
+              - 'gencloud'
+              - 'opennebula'
+              - 'oci'
 
     env:
-      ARCH: aarch64
+      ARCH: ${{ matrix.arch }}
       TIME_STAMP: ${{ needs.init-data.outputs.time_stamp }}
       DATE_STAMP: ${{ needs.init-data.outputs.date_stamp }}
 
@@ -283,6 +303,7 @@ jobs:
           type: ${{ matrix.type }}
           variant: ${{ matrix.variant }}
           arch: ${{ env.ARCH }}
+          runner_os: ${{ inputs.type == 'vagrant_vmware' && 'rhel' || 'ubuntu' }}
           S3_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           S3_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
