@@ -248,8 +248,9 @@ runs:
         export ws_build=24583834
 
         if ! sudo vmware -v 2>/dev/null; then
+          # If the VMware installation bundle isn't on upper folder level, download it
           [ ! -f ../VMware-Workstation-${ws_version}-${ws_build}.x86_64.bundle.tar ] && \
-            wget https://softwareupdate.vmware.com/cds/vmw-desktop/ws/${ws_version}/${ws_build}/linux/core/VMware-Workstation-${ws_version}-${ws_build}.x86_64.bundle.tar || \
+            wget https://softwareupdate-dev.broadcom.com/cds/vmw-desktop/ws/${ws_version}/${ws_build}/linux/core/VMware-Workstation-${ws_version}-${ws_build}.x86_64.bundle.tar || \
             mv ../VMware-Workstation-${ws_version}-${ws_build}.x86_64.bundle.tar .
           tar xf VMware-Workstation-${ws_version}-${ws_build}.x86_64.bundle.tar && rm -f VMware-Workstation-${ws_version}-${ws_build}.x86_64.bundle.tar
           chmod +x VMware-Workstation-${ws_version}-${ws_build}.x86_64.bundle
