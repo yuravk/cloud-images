@@ -106,7 +106,7 @@ on:
             - aws-ec2
 
         run_test:
-          description: "Do image simple testing  (vagrant_* only)"
+          description: "Do image simple testing and generate installed packages list (vagrant_* only)"
           required: true
           type: boolean
           default: false
@@ -265,6 +265,10 @@ jobs:
           upload_to_s3: ${{ inputs.upload_to_s3 }}
           notify_mattermost: ${{ inputs.notify_mattermost }}
           run_test: ${{ inputs.run_test }}
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ failure() }}
 
 
   start-self-hosted-runner:

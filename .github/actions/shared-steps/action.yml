@@ -330,17 +330,20 @@ runs:
         echo "IMAGE_NAME=$(basename ${image_file})" >> $GITHUB_ENV
 
     - name: Test ${{ inputs.type }} ${{ inputs.variant }} image
-      if: contains( inputs.type, 'vagrant' ) && inputs.run_test == 'true' && inputs.type != 'vagrant_virtualbox'
+      if: contains( inputs.type, 'vagrant' ) && inputs.run_test == 'true'
+      #  && inputs.type != 'vagrant_virtualbox'
       shell: bash
       run: |
         # Test ${{ inputs.type }} ${{ inputs.variant }} image
         sudo ${{ env.runner_os == 'ubuntu' && 'apt-get' || 'dnf -q' }} -y install vagrant >/dev/null
+        sudo vagrant plugin install vagrant-scp
 
         sudo vagrant box add ${{ inputs.type }}-${{ inputs.variant }} ${{ env.IMAGE_FILE }} --force
         # sudo vagrant init ${{ inputs.type }}-${{ inputs.variant }}
         cat <<'EOF'>Vagrantfile
         Vagrant.configure("2") do |config|
           config.vm.box = "${{ inputs.type }}-${{ inputs.variant }}"
+          # config.vm.boot_timeout = 300
           config.vm.provider "libvirt" do |libvirt|
             libvirt.memory = 2048
             libvirt.cpus = 2
@@ -357,7 +360,7 @@ runs:
         EOF
         case ${{ inputs.type }} in
           vagrant_virtualbox*)
-            sudo vagrant up --provider=virtualbox
+            sudo sh -c "VAGRANT_DISABLE_VBOXSYMLINKCREATE=1 vagrant up --provider=virtualbox" # --debug
             ;;
           vagrant_vmware*)
             vagrant_vmware_utility_version=1.0.23
@@ -395,6 +398,9 @@ runs:
         # Do simple checking
         sudo vagrant ssh default -c "cat /etc/almalinux-release | grep 'AlmaLinux release ${{ env.version_major }}'"
         sudo vagrant ssh default -c "sudo dnf check-update"
+        # Get installed packages list
+        sudo vagrant ssh default -c "rpm -qa --queryformat '%{NAME}\n' | sort > ${{ env.IMAGE_FILE }}.txt"
+        sudo vagrant scp default:${{ env.IMAGE_FILE }}.txt ./${{ env.IMAGE_FILE }}.txt
         # Cleanup Vagrant VM and box
         sudo vagrant destroy $(vagrant global-status | grep default | awk '{print $1}') --force || true
         sudo vagrant box remove ${{ inputs.type }}-${{ inputs.variant }} --force || true
@@ -417,6 +423,16 @@ runs:
         compression-level: 1
         name: ${{ env.IMAGE_NAME }}.sha256sum
         path: ${{ env.IMAGE_FILE }}.sha256sum
+
+    - uses: actions/upload-artifact@v4
+      name: Store packages list as artifact
+      id: pkglist-artifact
+      if: contains( inputs.type, 'vagrant' ) && inputs.run_test == 'true'
+      #  && inputs.type != 'vagrant_virtualbox'
+      with:
+        compression-level: 1
+        name: ${{ env.IMAGE_NAME }}.txt
+        path: ${{ env.IMAGE_FILE }}.txt
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4.0.2
