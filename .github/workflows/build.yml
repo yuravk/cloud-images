@@ -61,6 +61,7 @@ on:
           type: choice
           options:
             - 10-kitten
+            - 10
             - 9
             - 8
 
@@ -229,6 +230,12 @@ jobs:
             variant: '10-kitten-v2'
           - matrix_gh: 'digitalocean-x86_64'
             variant: '10-kitten-v2'
+          - matrix_gh: 'azure-x86_64'
+            variant: '10-v2'
+          - matrix_gh: 'oci-x86_64'
+            variant: '10-v2'
+          - matrix_gh: 'digitalocean-x86_64'
+            variant: '10-v2'
 
     env:
       TIME_STAMP: ${{ needs.init-data.outputs.time_stamp }}
@@ -274,23 +281,31 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: ${{ fromJSON(format('["{0}"]', ( (contains(needs.init-data.outputs.matrix_sh, 'azure-aarch64') && inputs.version_major == '9' ) && '9", "9-64k' || ( (contains(needs.init-data.outputs.matrix_sh, 'azure-aarch64') && inputs.version_major == '10-kitten' ) && '10-kitten", "10-kitten-64k' || inputs.version_major ) ) )) }}
+        variant: ${{ fromJSON(format('["{0}"]', ( (contains(needs.init-data.outputs.matrix_sh, 'azure-aarch64') && inputs.version_major == '9' ) && '9", "9-64k' || ( (contains(needs.init-data.outputs.matrix_sh, 'azure-aarch64') && inputs.version_major == '10-kitten' ) && '10-kitten", "10-kitten-64k' || ( ( (inputs.vagrant_type == 'vagrant_vmware' || inputs.vagrant_type == 'ALL') && inputs.version_major == '10' ) && '10", "10-v2' || inputs.version_major ) ) ) )) }}
         matrix_sh: ${{ fromJSON(needs.init-data.outputs.matrix_sh) }}
         exclude:
           - matrix_sh: 'oci-aarch64'
             variant: '10-kitten'
           - matrix_sh: 'oci-aarch64'
+            variant: '10'
+          - matrix_sh: 'oci-aarch64'
             variant: '9-64k'
           - matrix_sh: 'oci-aarch64'
             variant: '10-kitten-64k'
+          - matrix_sh: 'oci-aarch64'
+            variant: '10-64k'
           - matrix_sh: 'gencloud-aarch64'
             variant: '9-64k'
           - matrix_sh: 'gencloud-aarch64'
             variant: '10-kitten-64k'
+          - matrix_sh: 'gencloud-aarch64'
+            variant: '10-64k'
           - matrix_sh: 'opennebula-aarch64'
             variant: '9-64k'
           - matrix_sh: 'opennebula-aarch64'
             variant: '10-kitten-64k'
+          - matrix_sh: 'opennebula-aarch64'
+            variant: '10-64k'
 
     steps:
     - name: Setup and start runner
@@ -326,23 +341,31 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: ${{ fromJSON(format('["{0}"]', ( (contains(needs.init-data.outputs.matrix_sh, 'azure-aarch64') && inputs.version_major == '9' ) && '9", "9-64k' || ( (contains(needs.init-data.outputs.matrix_sh, 'azure-aarch64') && inputs.version_major == '10-kitten' ) && '10-kitten", "10-kitten-64k' || inputs.version_major ) ) )) }}
+        variant: ${{ fromJSON(format('["{0}"]', ( (contains(needs.init-data.outputs.matrix_sh, 'azure-aarch64') && inputs.version_major == '9' ) && '9", "9-64k' || ( (contains(needs.init-data.outputs.matrix_sh, 'azure-aarch64') && inputs.version_major == '10-kitten' ) && '10-kitten", "10-kitten-64k' || ( ( (inputs.vagrant_type == 'vagrant_vmware' || inputs.vagrant_type == 'ALL') && inputs.version_major == '10' ) && '10", "10-v2' || inputs.version_major ) ) ) )) }}
         matrix_sh: ${{ fromJSON(needs.init-data.outputs.matrix_sh) }}
         exclude:
           - matrix_sh: 'oci-aarch64'
             variant: '10-kitten'
           - matrix_sh: 'oci-aarch64'
+            variant: '10'
+          - matrix_sh: 'oci-aarch64'
             variant: '9-64k'
           - matrix_sh: 'oci-aarch64'
             variant: '10-kitten-64k'
+          - matrix_sh: 'oci-aarch64'
+            variant: '10-64k'
           - matrix_sh: 'gencloud-aarch64'
             variant: '9-64k'
           - matrix_sh: 'gencloud-aarch64'
             variant: '10-kitten-64k'
+          - matrix_sh: 'gencloud-aarch64'
+            variant: '10-64k'
           - matrix_sh: 'opennebula-aarch64'
             variant: '9-64k'
           - matrix_sh: 'opennebula-aarch64'
             variant: '10-kitten-64k'
+          - matrix_sh: 'opennebula-aarch64'
+            variant: '10-64k'
 
     env:
       TIME_STAMP: ${{ needs.init-data.outputs.time_stamp }}
