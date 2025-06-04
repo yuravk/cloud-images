@@ -45,14 +45,20 @@ on:
         #  qemu.almalinux-9                                   AlmaLinux-9-Vagrant-libvirt-9.5-20250201.x86_64.box
         #  qemu.almalinux_kitten_10_vagrant_libvirt_x86_64    AlmaLinux-Kitten-Vagrant-libvirt-10-20250201.0.x86_64.box
         #  qemu.almalinux_kitten_10_vagrant_libvirt_x86_64_v2 AlmaLinux-Kitten-Vagrant-libvirt-10-20250201.0.x86_64_v2.box
+        #  qemu.almalinux_10_vagrant_libvirt_x86_64           AlmaLinux-10-Vagrant-libvirt-10.0-20250529.0.x86_64.box
+        #  qemu.almalinux_10_vagrant_libvirt_x86_64_v2        AlmaLinux-10-Vagrant-libvirt-10.0-20250529.0.x86_64_v2.box
 
         # Vagrant for VirtualBox:
-        #  virtualbox-iso.almalinux-8             AlmaLinux-9-Vagrant-virtualbox-8.10-20250201.x86_64.box
-        #  virtualbox-iso.almalinux-9             AlmaLinux-9-Vagrant-virtualbox-9.5-20250201.x86_64.box
+        #  virtualbox-iso.almalinux-8                               AlmaLinux-9-Vagrant-virtualbox-8.10-20250201.x86_64.box
+        #  virtualbox-iso.almalinux-9                               AlmaLinux-9-Vagrant-virtualbox-9.5-20250201.x86_64.box
+        #  virtualbox-iso.almalinux_10_vagrant_virtualbox_x86_64    AlmaLinux-10-Vagrant-virtualbox-10.0-20250529.0.x86_64.box
+        #  virtualbox-iso.almalinux_10_vagrant_virtualbox_x86_64_v2 AlmaLinux-10-Vagrant-virtualbox-10.0-20250529.0.x86_64_v2.box
 
         # Vagrant for VMware:
-        #  vmware-iso.almalinux-8                 AlmaLinux-8-Vagrant-8.10-20250213.x86_64.vmware.box
-        #  vmware-iso.almalinux-9                 AlmaLinux-9-Vagrant-vmware-9.5-20250213.x86_64.box
+        #  vmware-iso.almalinux-8                           AlmaLinux-8-Vagrant-8.10-20250213.x86_64.vmware.box
+        #  vmware-iso.almalinux-9                           AlmaLinux-9-Vagrant-vmware-9.5-20250213.x86_64.box
+        #  vmware-iso.almalinux_10_vagrant_vmware_x86_64    AlmaLinux-10-Vagrant-vmware-10.0-20250529.0.x86_64.box
+        #  vmware-iso.almalinux_10_vagrant_vmware_x86_64_v2 AlmaLinux-10-Vagrant-vmware-10.0-20250529.0.x86_64_v2.box
 
         version_major:
           description: 'AlmaLinux major version'
@@ -183,7 +189,8 @@ jobs:
           fi
           if [ "${{ inputs.vagrant_type }}" = "vagrant_virtualbox" -o "${{ inputs.vagrant_type }}" = "ALL" ]; then
             [[ "${{ inputs.version_major }}" != *"kitten"*  ]] && \
-              VARIANTS_GH+=("vagrant_virtualbox-x86_64")
+              VARIANTS_SH+=("vagrant_virtualbox-x86_64")
+              # VARIANTS_GH+=("vagrant_virtualbox-x86_64")
           fi
           if [ "${{ inputs.vagrant_type }}" = "vagrant_vmware" -o "${{ inputs.vagrant_type }}" = "ALL" ]; then
             [[ "${{ inputs.version_major }}" != *"kitten"*  ]] && \
@@ -193,12 +200,12 @@ jobs:
           [ ${#VARIANTS_GH[@]} -ne 0 ] && matrix_gh=$(printf '"%s",' "${VARIANTS_GH[@]}")
           matrix_gh=${matrix_gh%,}  # Remove the trailing comma
           echo matrix_gh=$(jq -c <<< [${matrix_gh}]) >> $GITHUB_OUTPUT
-          echo "[Debug] [${matrix_gh}]"
+          echo "[Debug] on GitHub Hosted [${matrix_gh}]"
 
           [ ${#VARIANTS_SH[@]} -ne 0 ] && matrix_sh=$(printf '"%s",' "${VARIANTS_SH[@]}")
           matrix_sh=${matrix_sh%,}  # Remove the trailing comma
           echo matrix_sh=$(jq -c <<< [${matrix_sh}]) >> $GITHUB_OUTPUT
-          echo "[Debug] [${matrix_sh}]"
+          echo "[Debug] on Self Hosted [${matrix_sh}]"
 
       - name: Date+time stamp
         id: date-time-stamp
@@ -272,6 +279,7 @@ jobs:
           upload_to_s3: ${{ inputs.upload_to_s3 }}
           notify_mattermost: ${{ inputs.notify_mattermost }}
           run_test: ${{ inputs.run_test }}
+          runner: gh_hosted
 
   start-self-hosted-runner:
     name: ${{ matrix.variant }} ${{ matrix.matrix_sh }} runner
@@ -406,3 +414,4 @@ jobs:
           upload_to_s3: ${{ inputs.upload_to_s3 }}
           notify_mattermost: ${{ inputs.notify_mattermost }}
           run_test: ${{ inputs.run_test }}
+          runner: self_hosted

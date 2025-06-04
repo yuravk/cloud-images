@@ -35,10 +35,13 @@ inputs:
     required: true
   run_test:
     required: true
+  runner:
+    required: true
 
 runs:
   using: "composite"
   steps:
+
     - name: Runner OS, install extra packages
       shell: bash
       run: |
@@ -49,7 +52,7 @@ runs:
         elif lsb_release -cs > /dev/null 2>&1; then
           runner_os=ubuntu
           sudo apt-get -y update
-          sudo apt-get -y install ovmf rpm
+          sudo apt-get -y install ovmf rpm unzip
 
           echo "UBUNTU_CODENAME=$(lsb_release -cs)" >> $GITHUB_ENV
         else
@@ -348,8 +351,13 @@ runs:
         echo "IMAGE_FILE=${image_file}" >> $GITHUB_ENV
         echo "IMAGE_NAME=$(basename ${image_file})" >> $GITHUB_ENV
 
+    # - name: Setup tmate session
+    #   uses: mxschmitt/action-tmate@v3
+
     - name: Test ${{ inputs.type }} ${{ inputs.variant }} image
-      if: contains( inputs.type, 'vagrant' ) && inputs.run_test == 'true' && inputs.type != 'vagrant_virtualbox'
+      # Skip testing for vagrant_virtualbox on GH runner because 'vugrant up' fails to connect to the newly created VM via ssh:
+      # kex_exchange_identification: read: Connection reset by peer
+      if: ( inputs.type == 'vagrant_libvirt' || inputs.type == 'vagrant_vmware' || ( inputs.type == 'vagrant_virtualbox' && inputs.runner == 'self_hosted' ) ) && inputs.run_test == 'true'
       shell: bash
       run: |
         # Test ${{ inputs.type }} ${{ inputs.variant }} image
@@ -377,7 +385,7 @@ runs:
         EOF
         case ${{ inputs.type }} in
           vagrant_virtualbox*)
-            sudo sh -c "VAGRANT_DISABLE_VBOXSYMLINKCREATE=1 vagrant up --provider=virtualbox"
+            sudo vagrant up --provider=virtualbox
             ;;
           vagrant_vmware*)
             vagrant_vmware_utility_version=1.0.23
@@ -424,6 +432,10 @@ runs:
         sudo vagrant box remove ${{ inputs.type }}-${{ inputs.variant }} --force || true
         sudo rm -f Vagrantfile || true
 
+        [ -f ${{ env.IMAGE_FILE }}.txt ] \
+          && echo "got_pkgs_list=true" >> $GITHUB_ENV \
+          || echo "got_pkgs_list=false" >> $GITHUB_ENV
+
     - uses: actions/upload-artifact@v4
       name: Store image as artifact
       id: image-artifact
@@ -445,7 +457,7 @@ runs:
     - uses: actions/upload-artifact@v4
       name: Store packages list as artifact
       id: pkglist-artifact
-      if: contains( inputs.type, 'vagrant' ) && inputs.run_test == 'true' && inputs.type != 'vagrant_virtualbox'
+      if: inputs.store_as_artifact  == 'true' && env.got_pkgs_list == 'true'
       with:
         compression-level: 1
         name: ${{ env.IMAGE_NAME }}.txt
@@ -487,15 +499,24 @@ runs:
     - name: Put S3 Bucket download URLs
       if: inputs.upload_to_s3 == 'true'
       uses: actions/github-script@v7
+      env:
+        got_pkgs_list: ${{ env.got_pkgs_list || 'false' }}
       with:
         result-encoding: string
         script: |
-          core.summary
-              .addHeading('S3 Bucket download URLs', '4')
-              .addLink('${{ env.IMAGE_NAME }}.sha256sum', 'https://${{ inputs.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}.sha256sum')
+          const summary = core.summary
+            .addHeading('S3 Bucket download URLs', '4')
+            .addLink('${{ env.IMAGE_NAME }}.sha256sum', 'https://${{ inputs.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}.sha256sum')
+            .addBreak()
+            .addLink('${{ env.IMAGE_NAME }}', 'https://${{ inputs.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}');;
+
+          if (process.env.got_pkgs_list === 'true') {
+            summary
               .addBreak()
-              .addLink('${{ env.IMAGE_NAME }}', 'https://${{ inputs.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}')
-              .write()
+              .addLink('${{ env.IMAGE_NAME }}.txt', 'https://${{ inputs.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}.txt');
+          }
+
+          summary.write();
 
     - name: Send notification to Mattermost (Artifacts)
       uses: mattermost/action-mattermost-notify@master
@@ -513,6 +534,8 @@ runs:
 
           - Image [zipped]: [${{ env.IMAGE_NAME }}](${{ steps.image-artifact.outputs.artifact-url }})
 
+          ${{ env.got_pkgs_list == 'true' && format('- Packages list [zipped]: [{0}.txt]({1})', env.IMAGE_NAME, steps.pkglist-artifact.outputs.artifact-url) || ''}}
+
     - name: Send notification to Mattermost (AWS S3 links)
       uses: mattermost/action-mattermost-notify@master
       if: ${{ inputs.upload_to_s3 == 'true' && inputs.notify_mattermost == 'true' }}
@@ -528,6 +551,8 @@ runs:
           - CHECKSUM(SHA256): [${{ env.IMAGE_NAME }}.sha256sum](https://${{ inputs.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }}.sha256sum)
 
           - Image: [${{ env.IMAGE_NAME }}](https://${{ inputs.AWS_S3_BUCKET }}.s3-accelerate.dualstack.amazonaws.com/${{ env.AWS_S3_PATH }}/${{ env.IMAGE_NAME }})
+
+          ${{ env.got_pkgs_list == 'true' && format('- Packages list: [{0}.txt](https://{1}.s3-accelerate.dualstack.amazonaws.com/{2}/{3}.txt)', env.IMAGE_NAME, inputs.AWS_S3_BUCKET, env.AWS_S3_PATH, env.IMAGE_NAME) || ''}}
 
     - name: Vagrant cloud publish
       if: inputs.vagrant_publish == 'true' && contains( inputs.type, 'vagrant' )
