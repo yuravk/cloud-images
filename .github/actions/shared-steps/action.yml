@@ -348,6 +348,9 @@ runs:
         echo "IMAGE_FILE=${image_file}" >> $GITHUB_ENV
         echo "IMAGE_NAME=$(basename ${image_file})" >> $GITHUB_ENV
 
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+
     - name: Test ${{ inputs.type }} ${{ inputs.variant }} image
       if: contains( inputs.type, 'vagrant' ) && inputs.run_test == 'true'
       #  && inputs.type != 'vagrant_virtualbox'
@@ -426,10 +429,6 @@ runs:
         sudo vagrant destroy $(vagrant global-status | grep default | awk '{print $1}') --force || true
         sudo vagrant box remove ${{ inputs.type }}-${{ inputs.variant }} --force || true
         sudo rm -f Vagrantfile || true
-
-    - name: Setup tmate session
-      uses: mxschmitt/action-tmate@v3
-      if: ${{ failure() }}
 
     - uses: actions/upload-artifact@v4
       name: Store image as artifact
