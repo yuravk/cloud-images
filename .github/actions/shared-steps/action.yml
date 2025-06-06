@@ -366,6 +366,7 @@ runs:
             libvirt.memory = 2048
             libvirt.cpus = 2
           end
+          config.ssh.insert_key = false
           config.vm.provider "virtualbox" do |vb|
             vb.memory = 2048
             vb.cpus = 2
