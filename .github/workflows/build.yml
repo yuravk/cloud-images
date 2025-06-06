@@ -194,12 +194,12 @@ jobs:
           [ ${#VARIANTS_GH[@]} -ne 0 ] && matrix_gh=$(printf '"%s",' "${VARIANTS_GH[@]}")
           matrix_gh=${matrix_gh%,}  # Remove the trailing comma
           echo matrix_gh=$(jq -c <<< [${matrix_gh}]) >> $GITHUB_OUTPUT
-          echo "[Debug] [${matrix_gh}]"
+          echo "[Debug] on GitHub Hosted [${matrix_gh}]"
 
           [ ${#VARIANTS_SH[@]} -ne 0 ] && matrix_sh=$(printf '"%s",' "${VARIANTS_SH[@]}")
           matrix_sh=${matrix_sh%,}  # Remove the trailing comma
           echo matrix_sh=$(jq -c <<< [${matrix_sh}]) >> $GITHUB_OUTPUT
-          echo "[Debug] [${matrix_sh}]"
+          echo "[Debug] on Self Hosted [${matrix_sh}]"
 
       - name: Date+time stamp
         id: date-time-stamp
