@@ -379,6 +379,7 @@ runs:
         EOF
         case ${{ inputs.type }} in
           vagrant_virtualbox*)
+            sudo rm -f /root/.ssh/known_hosts
             sudo sh -c "VAGRANT_DISABLE_VBOXSYMLINKCREATE=1 vagrant up --provider=virtualbox"
             ;;
           vagrant_vmware*)
@@ -425,6 +426,10 @@ runs:
         sudo vagrant destroy $(vagrant global-status | grep default | awk '{print $1}') --force || true
         sudo vagrant box remove ${{ inputs.type }}-${{ inputs.variant }} --force || true
         sudo rm -f Vagrantfile || true
+
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+      if: ${{ failure() }}
 
     - uses: actions/upload-artifact@v4
       name: Store image as artifact
