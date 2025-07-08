@@ -58,7 +58,7 @@ jobs:
         echo "PACKER_TEMPLATE=${packer_template}" >> $GITHUB_ENV
 
         variant="${{ matrix.variant }}"
-        variant="${variant,}"
+        variant="${variant^}"
         variant="${variant//_/ }"
         echo "'AlmaLinux OS ${variant}*x86_64'"
         SOURCE_AMI_ID=$(aws ec2 describe-images --owners 764336703387 --query 'sort_by(Images, &CreationDate)[*].[ImageId]' --filters "Name=name,Values=AlmaLinux OS ${variant}*${{ matrix.arch }}" --region us-east-1 --output text | tail -1)
