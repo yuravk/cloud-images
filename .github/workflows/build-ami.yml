@@ -68,10 +68,6 @@ jobs:
         fi
         echo "SOURCE_AMI_ID=${SOURCE_AMI_ID}" >> $GITHUB_ENV
 
-        # This a part of source AMI secret variable name, like EC2_AMI_ID_AL9_X86_64, EC2_AMI_ID_AL10_KITTEN_AARCH64, ...
-        echo "VERSION_MAJOR=${{ matrix.variant == 'kitten_10' && '10_KITTEN' || matrix.variant }}" >> $GITHUB_ENV
-        ARCH=${{ matrix.arch }}; echo "ARCH=${ARCH^^}" >> $GITHUB_ENV
-
     - name: Update system
       run: |
         sudo apt-get -y update
@@ -94,11 +90,9 @@ jobs:
 
     - name: Build ${{ matrix.variant }} ${{ matrix.arch }} AMI
       run: |
-        # Building AMI for ${{ matrix.variant }} ${{ matrix.arch }}
         packer build \
           -var='aws_source_ami_${{ matrix.variant }}_${{ matrix.arch }}=${{ env.SOURCE_AMI_ID }}' \
           -var='aws_ami_region=${{ vars.AWS_REGION }}' \
-          -var='aws_ami_regions=["${{ vars.AWS_REGION }}"]' \
           -only=${{ env.PACKER_TEMPLATE }} . |& tee ${{ matrix.variant }}_${{ matrix.arch }}_build.log
 
         exit_code=${PIPESTATUS[0]}
