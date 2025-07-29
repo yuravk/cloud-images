@@ -1,0 +1,154 @@
+name: ami-to-marketplace
+
+on:
+  workflow_dispatch:
+      inputs:
+
+        ami_id:
+          description: "AMI ID to add"
+          required: true
+          default: ''
+
+        to_marketplace:
+          description: "Add the AMI to corresponded product"
+          required: true
+          type: boolean
+          default: false
+
+        notify_mattermost:
+          description: "Send notification to Mattermost"
+          required: true
+          type: boolean
+          default: false
+
+jobs:
+  add-ami-to-product:
+    name: "Add ${{ inputs.ami_id }} AMI to product"
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4.0.2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION }}
+
+    - name: Describe AMI
+      run: |
+        {
+          echo 'AMI_JSON<<EOF'
+          aws ec2 describe-images --image-ids=${{ inputs.ami_id}}
+          echo EOF
+        } >> "$GITHUB_ENV"
+
+    - name: Get AMI version and OS version
+      run: |
+        AMI_VERSION=$(echo '${{ env.AMI_JSON }}' | jq -r '.Images[0].Tags[] | select(.Key == "Version") | .Value')
+        if [[ "${AMI_VERSION}" == "" || "${AMI_VERSION}" == "None" ]]; then
+          exit 1
+        else
+          echo "[Debug] AMI Version: '${AMI_VERSION}'"
+        fi
+        echo "AMI_VERSION=${AMI_VERSION}" >> $GITHUB_ENV
+        echo "OS_VERSION=${AMI_VERSION%.*.*}" >> $GITHUB_ENV
+
+    - name: Get corresponded Product ID
+      run: |
+        # Get the Product ID for AlmaLinux specific release and architecture, like:
+        # Name                            Product ID          Product Code
+        # AlmaLinux OS 8 (x86_64)         prod-fai27pconxer6  be714bpjscoj5uvqz0of5mscl
+        # AlmaLinux OS 8 (arm64)          prod-ee3jipi4asbr6  6vto7uou7jjh4um1mwoy8ov0s
+        # AlmaLinux OS 9 (x86_64)         prod-6grf2aboe7hdm  3kukoxmnoighcsbjd0u4nq9ds
+        # AlmaLinux OS 9 (arm64)          prod-owmexvyxh5isg  2o6rbw1x246a3x61a9x9fja3f
+        # AlmaLinux OS 10 (x86_64)        prod-cvyxsvsdzfjx4  45c7rv3atnw8757f1k42obgeq
+        # AlmaLinux OS 10 (arm64)         prod-qgpr5bqxuzt5i  6soho9ikow99d3hz1jqv70a45
+        # AlmaLinux OS Kitten 10 (x86_64) prod-svbminwb7w5se  dqwvzjbb1nbatq1c2102yzp5e
+        # AlmaLinux OS Kitten 10 (arm64)  prod-npz256ulofnae  4cvsxsmuyryfq0t7qyxrwk9p7
+
+        # PRODUCT_CODE=$(aws marketplace-catalog list-entities --catalog AWSMarketplace --entity-type AmiProduct --output text)
+        # if [[ "${PRODUCT_CODE}" == "" || "${PRODUCT_CODE}" == "None" ]]; then
+        #   exit 1
+        # else
+        #   echo "[Debug] Product Code: '${PRODUCT_CODE}'"
+        # fi
+
+        # Get the short name, version major and architecture from the AMI JSON
+        short_name="${{ fromJSON(env.AMI_JSON).Images[0].Name }}" && short_name="${short_name% * *}"
+        version_major="${{ env.OS_VERSION }}" && version_major="${version_major%%.*}"
+        architecture="${{ fromJSON(env.AMI_JSON).Images[0].Architecture }}"
+
+        case "${short_name} ${version_major} ${architecture}" in
+          "AlmaLinux OS 8 x86_64")          PRODUCT_CODE="be714bpjscoj5uvqz0of5mscl" ;;
+          "AlmaLinux OS 8 arm64")           PRODUCT_CODE="6vto7uou7jjh4um1mwoy8ov0s" ;;
+          "AlmaLinux OS 9 x86_64")          PRODUCT_CODE="3kukoxmnoighcsbjd0u4nq9ds" ;;
+          "AlmaLinux OS 9 arm64")           PRODUCT_CODE="2o6rbw1x246a3x61a9x9fja3f" ;;
+          "AlmaLinux OS 10 x86_64")         PRODUCT_CODE="45c7rv3atnw8757f1k42obgeq" ;;
+          "AlmaLinux OS 10 arm64")          PRODUCT_CODE="6soho9ikow99d3hz1jqv70a45" ;;
+          "AlmaLinux OS Kitten 10 x86_64")  PRODUCT_CODE="dqwvzjbb1nbatq1c2102yzp5e" ;;
+          "AlmaLinux OS Kitten 10 arm64")   PRODUCT_CODE="4cvsxsmuyryfq0t7qyxrwk9p7" ;;
+          *) echo "[Error] Unsupported AlmaLinux release: '${short_name} ${version_major} ${architecture}'"; exit 1 ;;
+        esac
+        echo "PRODUCT_CODE=${PRODUCT_CODE}" >> $GITHUB_ENV
+
+    -
+      name: "Render the product change set"
+      uses: chuhlomin/render-template@v1
+      with:
+        template: CI/aws_marketplace_change_set.json.template
+        result_path: CI/aws_marketplace_change_set.json
+        vars: |
+          product_code: "${{ env.PRODUCT_CODE }}"
+          version: "${{ env.AMI_VERSION }}"
+          release_notes: "Release notes for version ${{ fromJSON(env.AMI_JSON).Images[0].Name }}"
+          ami_id: "${{ inputs.ami_id }}"
+          # The ARN of the role that has privileges to access products in the AWS Marketplace catalog
+          access_role_arn: "arn:aws:iam::764336703387:role/AWS-Marketplace-Product-Access-Role"
+          os_release: "${{ env.OS_VERSION }}"
+          instance_type: "t3.medium"
+
+    - name: Print the change set
+      run: |
+        echo "Change set:"
+        cat CI/aws_marketplace_change_set.json
+
+    - name: Release to marketplace
+      if: inputs.to_marketplace
+      run: |
+        echo aws marketplace-catalog start-change-set \
+          --catalog "AWSMarketplace" \
+          --change-set-name "Release '${{ fromJSON(env.AMI_JSON).Images[0].Name }}'" \
+          --change-set file://CI/aws_marketplace_change_set.json
+
+        echo "Waiting for the change set to be processed..."
+        echo aws marketplace-catalog describe-change-set --change-set-id <ID>
+
+    - name: Print job summary
+      uses: actions/github-script@v7
+      with:
+        result-encoding: string
+        script: |
+          core.summary
+              .addHeading('${{ fromJSON(env.AMI_JSON).Images[0].Name }}', '4')
+              .addHeading('AMI ID: ${{ inputs.ami_id }}', '5')
+              .addHeading('Product Code: ${{ env.PRODUCT_CODE }}', '5')
+              .addHeading('Release to Marketplace: ${{ inputs.to_marketplace && '✅' || '❌'}}', '5')
+              .write()
+
+    - name: Send notification to Mattermost
+      uses: mattermost/action-mattermost-notify@master
+      if: inputs.notify_mattermost
+      with:
+        MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+        MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
+        MATTERMOST_USERNAME: ${{ github.triggering_actor }}
+        TEXT: |
+          :almalinux: **${{ fromJSON(env.AMI_JSON).Images[0].Name }}** added to the Marketplace, by the GitHub [Action](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          **AMI ID**: `${{ inputs.ami_id }}`
+
+          **Product Code**: `${{ env.PRODUCT_CODE }}`
+
+          Release to Marketplace: ${{ inputs.to_marketplace && '✅' || '❌'}}
