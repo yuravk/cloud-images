@@ -1,0 +1,38 @@
+{
+    "ChangeType": "AddDeliveryOptions",
+    "Entity": {
+        "Type": "AmiProduct@1.0",
+        "Identifier": "{{ .product_id }}"
+    },
+    "Details": {
+        "Version": {
+            "VersionTitle": "{{ .version }}",
+            "ReleaseNotes": "{{ .release_notes}}"
+        },
+        "DeliveryOptions": [
+            {
+                "Details": {
+                    "AmiDeliveryOptionDetails": {
+                        "AmiSource": {
+                            "AmiId": "{{ .ami_id }}",
+                            "AccessRoleArn": "{{ .access_role_arn }}",
+                            "OperatingSystemName": "OTHERLINUX",
+                            "OperatingSystemVersion": "{{ .os_version }}",
+                            "UserName": "ec2-user"
+                        },
+                        "RecommendedInstanceType": "{{ .instance_type }}",
+                        "SecurityGroups": [
+                            {
+                                "IpProtocol": "tcp",
+                                "FromPort": 22,
+                                "ToPort": 22,
+                                "IpRanges": ["0.0.0.0/0"]
+                            }
+                        ],
+                        "UsageInstructions": "SSH to the instance and log in as 'ec2-user' using the key specified at launch."
+                    }
+                }
+            }
+        ]
+    }
+  }
