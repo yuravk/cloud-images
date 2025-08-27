@@ -112,8 +112,8 @@ jobs:
     - name: "Render the product change set"
       uses: chuhlomin/render-template@v1
       with:
-        template: CI/aws_marketplace_change_set.json.template
-        result_path: CI/aws_marketplace_change_set.json
+        template: .github/aws_marketplace_change_set.json.template
+        result_path: .github/aws_marketplace_change_set.json
         vars: |
           product_id: "${{ env.PRODUCT_ID }}"
           version: "${{ env.AMI_VERSION }}"
@@ -127,7 +127,7 @@ jobs:
     - name: Print the Change Set
       run: |
         echo "Change set:"
-        cat CI/aws_marketplace_change_set.json
+        cat .github/aws_marketplace_change_set.json
 
     - name: Start the Change Set
       id: start-change-set
@@ -138,7 +138,7 @@ jobs:
           aws marketplace-catalog start-change-set \
             --catalog "AWSMarketplace" \
             --change-set-name "Release ${{ fromJSON(env.AMI_JSON).Images[0].Name }}" \
-            --change-set "file://CI/aws_marketplace_change_set.json"
+            --change-set "file://.github/aws_marketplace_change_set.json"
           echo EOF
         } >> "$GITHUB_ENV"
 
