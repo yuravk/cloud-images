@@ -1,0 +1,74 @@
+name: build-vagrant-arm64
+
+on:
+  workflow_dispatch:
+    inputs:
+
+      provider:
+        description: 'Vagrant provider'
+        required: true
+        default: 'vmware'
+        type: choice
+        options:
+          - virtualbox
+          - vmware
+
+      version_major:
+        description: 'AlmaLinux major version'
+        required: true
+        default: '9'
+        type: choice
+        options:
+          - 10-kitten
+          - 10
+          - 9
+          - 8
+
+env:
+  PACKER_GITHUB_API_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+
+jobs:
+  build-vagrant-arm64:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install VirtualBox
+      if: inputs.provider == 'virtualbox'
+      run: |
+        brew install --cask virtualbox
+
+    - name: List VirtualBox ostypes
+      if: inputs.provider == 'virtualbox'
+      run: |
+        VBoxManage list ostypes
+
+    - name: Install VMware Fusion
+      if: inputs.provider == 'vmware'
+      run: |
+        CASK_NAME="vmware-fusion"
+        CASK_REPO_PATH=$(brew --repo homebrew/cask)
+        CASK_FILE_PATH="$CASK_REPO_PATH/Casks/v/$CASK_NAME.rb"
+        [[ ! -f "$CASK_FILE_PATH" ]] && echo "Cask $CASK_NAME does not exist!" && exit 1
+        sudo cp -av .github/workflows/vmware-fusion.rb "$CASK_FILE_PATH"
+
+        export HOMEBREW_NO_INSTALL_FROM_API=1
+        brew install --cask "$CASK_NAME" --no-quarantine
+
+        sudo /Applications/VMware\ Fusion.app/Contents/Library/vmnet-cli --stop
+        sudo /Applications/VMware\ Fusion.app/Contents/Library/vmnet-cli --configure
+        sudo /Applications/VMware\ Fusion.app/Contents/Library/vmnet-cli --start
+
+    - name: install ansible
+      run: |
+        brew install ansible
+
+    - name: Initialize packer
+      run: |
+        packer init -upgrade .
+
+    - name: Build image
+      run: |
+        packer build -only=${{ inputs.provider }}-iso.almalinux-9-aarch64 .
