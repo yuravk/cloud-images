@@ -1,0 +1,44 @@
+name: build-virtualbox-arm64
+
+on:
+  workflow_dispatch:
+    inputs:
+        version_major:
+            description: 'AlmaLinux major version'
+            required: true
+            default: '9'
+            type: choice
+            options:
+            - 10-kitten
+            - 10
+            - 9
+            - 8
+
+env:
+  PACKER_GITHUB_API_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+
+jobs:
+  build-virtualbox-arm64:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install virtualBox
+      run: |
+          brew install --cask virtualbox
+          VBoxManage list ostypes
+
+    - name: install ansible
+      run: |
+          brew install ansible
+
+    - name: Initialize packer
+      run: |
+        packer init -upgrade .
+
+    - name: Build image
+      run: |
+        packer build -only=virtualbox-iso.almalinux-9-aarch64 .
+        #packer build -only=virtualbox-iso.almalinux_10_vagrant_virtualbox_aarch64 .
