@@ -97,14 +97,14 @@ def get_ami_info(ec2, ami_id):
     return resp["Images"][0]
 
 
-def get_snap_id(ami_region, ami_id):
+def get_snap_id(ec2_client, ami_id):
     """
     Get snapshot ID of an Amazon Machine Image
 
     Parameters
     ----------
-    ami_region: str
-        Region of the AMI
+    ec2_client: botocore.client.EC2
+        AWS EC2 client
     ami_id: str
         ID of the AMI
 
@@ -113,20 +113,19 @@ def get_snap_id(ami_region, ami_id):
     string
         Snapshot ID of the AMI
     """
-    client = boto3.client("ec2", region_name=ami_region)
-    response = client.describe_images(ImageIds=[ami_id])
+    response = ec2_client.describe_images(ImageIds=[ami_id])
     snap_id = response["Images"][0]["BlockDeviceMappings"][0]["Ebs"]["SnapshotId"]
     return snap_id
 
 
-def make_snap_public(ami_region, snap_id):
+def make_snap_public(ec2_client, snap_id):
     """
     Makes a snapshot public
 
     Parameters
     ----------
-    ami_region: str
-        Region of the AMI
+    ec2_client: botocore.client.EC2
+        AWS EC2 client
     snap_id: str
         ID of the Snapshot
 
@@ -134,8 +133,7 @@ def make_snap_public(ami_region, snap_id):
     -------
     None
     """
-    client = boto3.client("ec2", region_name=ami_region)
-    response = client.modify_snapshot_attribute(
+    ec2_client.modify_snapshot_attribute(
         Attribute="createVolumePermission",
         GroupNames=[
             "all",
@@ -145,24 +143,24 @@ def make_snap_public(ami_region, snap_id):
     )
 
 
-def make_src_ami_public(ec2, src_region, src_ami_id):
+def make_src_ami_public(ec2, src_ami_id):
     ec2.modify_image_attribute(
         ImageId=src_ami_id, LaunchPermission={"Add": [{"Group": "all"}]}
     )
-    src_snap_id = get_snap_id(src_region, src_ami_id)
-    make_snap_public(src_region, src_snap_id)
-    if get_snap_perm(src_region, src_snap_id) != "all":
+    src_snap_id = get_snap_id(ec2, src_ami_id)
+    make_snap_public(ec2, src_snap_id)
+    if get_snap_perm(ec2, src_snap_id) != "all":
         raise Exception(f"Could not made snapshot of source AMI public")
 
 
-def get_snap_perm(ami_region, snap_id):
+def get_snap_perm(ec2_client, snap_id):
     """
     Gets permissions of the snapshots by ID
 
     Parameters
     ----------
-    ami_region: str
-        Region of the AMI
+    ec2_client: botocore.client.EC2
+        AWS EC2 client
     snap_id: str
         ID of the Snapshot
 
@@ -170,10 +168,11 @@ def get_snap_perm(ami_region, snap_id):
     -------
     str
     """
-    client = boto3.client("ec2", region_name=ami_region)
-    response = client.describe_snapshot_attribute(
+    response = ec2_client.describe_snapshot_attribute(
         Attribute="createVolumePermission", SnapshotId=snap_id
     )
+    if not response["CreateVolumePermissions"]:
+        return None
     snap_perm = response["CreateVolumePermissions"][0]["Group"]
     return snap_perm
 
@@ -223,9 +222,9 @@ def copy_ami(ami_info, src_region, dst_region, aws_client_token):
     dst_ec2.modify_image_attribute(
         ImageId=dst_ami_id, LaunchPermission={"Add": [{"Group": "all"}]}
     )
-    dst_snap_id = get_snap_id(dst_region, dst_ami_id)
-    make_snap_public(dst_region, dst_snap_id)
-    if get_snap_perm(dst_region, dst_snap_id) == "all":
+    dst_snap_id = get_snap_id(dst_ec2, dst_ami_id)
+    make_snap_public(dst_ec2, dst_snap_id)
+    if get_snap_perm(dst_ec2, dst_snap_id) == "all":
         return dst_ami_id, dst_snap_id, dst_region
     else:
         raise Exception(
@@ -303,29 +302,35 @@ def main(sys_args):
     name = ami_name(ami_info)
     regions = [r for r in iter_regions(ec2) if r != src_region]
     public_amis = {src_region: ami_info["ImageId"]}
+    failed_regions = []
     aws_client_token = args.aws_client_token or src_ami_id
     with ThreadPoolExecutor(max_workers=len(regions) + 1) as executor:
-        futures = []
-        for dst_region in regions:
-            futures.append(
-                executor.submit(
-                    copy_ami,
-                    ami_info=ami_info,
-                    src_region=src_region,
-                    dst_region=dst_region,
-                    aws_client_token=aws_client_token,
-                )
-            )
+        futures = {
+            executor.submit(
+                copy_ami,
+                ami_info=ami_info,
+                src_region=src_region,
+                dst_region=dst_region,
+                aws_client_token=aws_client_token,
+            ): dst_region
+            for dst_region in regions
+        }
         for future in as_completed(futures):
-            dst_ami_id, dst_snap_id, dst_region = future.result()
-            log.info(
-                f"mirrored {dst_ami_id} : {dst_snap_id} AMI to {dst_region} region"
-            )
-            public_amis[dst_region] = dst_ami_id
+            dst_region = futures[future]
+            try:
+                dst_ami_id, dst_snap_id, dst_region = future.result()
+                log.info(
+                    f"mirrored {dst_ami_id}:{dst_snap_id} "
+                    f"AMI to {dst_region} region"
+                )
+                public_amis[dst_region] = dst_ami_id
+            except Exception as e:
+                log.error(f"cannot mirror AMI to {dst_region}: {e}")
+                failed_regions.append(dst_region)
     try:
-        make_src_ami_public(ec2, src_region, src_ami_id)
-    except:
-        print(f"Could not made public the source AMI: {src_ami_id}")
+        make_src_ami_public(ec2, src_ami_id)
+    except Exception as e:
+        log.error(f"could not make the source AMI public: {src_ami_id}: {e}")
     md_header = ["Distribution", "Version", "Region", "AMI ID", "Arch"]
     md_rows = []
     with open(args.csv_output, "w") as csv_fd:
