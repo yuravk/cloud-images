@@ -62,6 +62,7 @@ jobs:
           # Check if the optional "_v2" group was captured
           if [[ -n "${BASH_REMATCH[6]}" ]]; then
             is_v2_suffix="-x86_64_v2"
+            architecture="x86_64_v2"
           fi
 
         # Fall back to the Legacy pattern
@@ -75,6 +76,7 @@ jobs:
           # Check if the optional "_v2" group was captured
           if [[ -n "${BASH_REMATCH[5]}" ]]; then
             is_v2_suffix="-x86_64_v2"
+            architecture="x86_64_v2"
           fi
 
         else
@@ -87,15 +89,16 @@ jobs:
           provider="vmware_desktop"
         fi
 
-        # Construct the final complex major version string as requested
-        version_major="${major_version}${kitten_suffix}${is_v2_suffix}"
+        # Construct the version of vagrant box, like:
+        # 8, 9, 10, 10-x86_64_v2, 10-kitten, 10-kitten-x86_64_v2
+        box_version="${major_version}${kitten_suffix}${is_v2_suffix}"
 
         # AlmaLinux distro release string
-        [[ $version_major == *kitten* ]] && release_string="AlmaLinux OS Kitten $major_version $architecture" \
+        [[ $box_version == *kitten* ]] && release_string="AlmaLinux OS Kitten $major_version $architecture" \
           || release_string="AlmaLinux OS $major_version $architecture"
 
         # Set corresponded environment variables
-        echo "version_major=${version_major}" >> $GITHUB_ENV
+        echo "box_version=${box_version}" >> $GITHUB_ENV
         echo "vagrant_provider=${provider}" >> $GITHUB_ENV
         echo "architecture=${architecture}" >> $GITHUB_ENV
         echo "release_version=${release_version}" >> $GITHUB_ENV
@@ -128,11 +131,10 @@ jobs:
         # Vagrant cloud publish
         cd /mnt
 
-        [ ${{ env.architecture }} = "x86_64" ] && arch=amd64
+        [ ${{ env.architecture }} = "x86_64" -o ${{ env.architecture }} = "x86_64_v2" ] && arch=amd64
         [ ${{ env.architecture }} = "aarch64" ] && arch=arm64
         [[ ${{ inputs.dry-run-mode }} = "true" ]] && checksum="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
           || checksum="$(sha256sum ${{ env.image_file }} | awk '{ print $1 }')"
-        echo "[Debug] provider=${{ env.vagrant_provider }} box_name=${{ env.version_major }} checksum=${checksum} image_file=${{ env.image_file }}"
 
         hcp auth login --client-id=${{ secrets.HCP_CLIENT_ID }} --client-secret=${{ secrets.HCP_CLIENT_SECRET }}
         export VAGRANT_CLOUD_TOKEN="$(hcp auth print-access-token)"
@@ -146,7 +148,7 @@ jobs:
           --direct-upload \
           --debug \
           -f \
-          "${{ vars.HCP_ORG }}/${{ env.version_major }}" \
+          "${{ vars.HCP_ORG }}/${{ env.box_version }}" \
           ${{ env.release_version }}.${{ env.date_stamp }} \
           ${{ env.vagrant_provider }} \
           ${{ env.image_file }}
@@ -160,7 +162,7 @@ jobs:
               .addRaw('**${{ env.release_string }}** Vagrant box cloud publishing\n')
               .addRaw('Vagrant box for **${{ env.vagrant_provider }}** version: `${{ env.release_version }}.${{ env.date_stamp }}`\n')
               .addRaw('The box name: ')
-              .addLink('${{ vars.HCP_ORG }}/${{ env.version_major }}', 'https://portal.cloud.hashicorp.com/vagrant/discover/${{ vars.HCP_ORG }}/${{ env.version_major }}/versions/${{ env.release_version }}.${{ env.date_stamp }}')
+              .addLink('${{ vars.HCP_ORG }}/${{ env.box_version }}', 'https://portal.cloud.hashicorp.com/vagrant/discover/${{ vars.HCP_ORG }}/${{ env.box_version }}/versions/${{ env.release_version }}.${{ env.date_stamp }}')
               .addRaw('Published to the Cloud: ${{ inputs.dry-run-mode && '❌' || '✅' }}')
               .write()
 
@@ -176,6 +178,6 @@ jobs:
 
           Vagrant box for **${{ env.vagrant_provider }}** version: `${{ env.release_version }}.${{ env.date_stamp }}`
 
-          The box name: [${{ vars.HCP_ORG }}/${{ env.version_major }}](https://portal.cloud.hashicorp.com/vagrant/discover/${{ vars.HCP_ORG }}/${{ env.version_major }}/versions/${{ env.release_version }}.${{ env.date_stamp }})
+          The box name: [${{ vars.HCP_ORG }}/${{ env.box_version }}](https://portal.cloud.hashicorp.com/vagrant/discover/${{ vars.HCP_ORG }}/${{ env.box_version }}/versions/${{ env.release_version }}.${{ env.date_stamp }})
 
           Published to the Cloud: ${{ inputs.dry-run-mode && '❌' || '✅' }}
