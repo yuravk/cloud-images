@@ -1,0 +1,275 @@
+name: OCI Image to Marketplace release
+
+on:
+  workflow_dispatch:
+      inputs:
+
+        image_url:
+          description: "URL to publicly accessible qcow2 file"
+          required: true
+          default: ''
+
+        release_to_marketplace:
+          description: "Release the image to Marketplace listing"
+          required: true
+          type: boolean
+          default: true
+
+        public_listing:
+          description: "The listing is public"
+          required: true
+          type: boolean
+          default: false
+
+        notify_mattermost:
+          description: "Send notification to Mattermost"
+          required: true
+          type: boolean
+          default: false
+
+jobs:
+  release-image-to-marketplace:
+    name: "Release image to OCI Marketplace"
+    runs-on: ubuntu-24.04
+    env:
+      OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+      OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install OCI CLI
+      run: |
+        # Install OCI CLI
+        curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
+        chmod +x install.sh
+        ./install.sh --accept-all-defaults
+        echo "$HOME/bin" >> $GITHUB_PATH
+
+    - name: Configure OCI CLI
+      run: |
+        # Configure OCI CLI using environment variables
+        mkdir -p ~/.oci
+        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
+        chmod 600 ~/.oci/key.pem
+
+        # Verify OCI CLI is working
+        oci --version
+
+    - name: Parse image filename
+      id: parse-image
+      run: |
+        # Extract filename from URL
+        IMAGE_URL="${{ inputs.image_url }}"
+        IMAGE_FILENAME=$(basename "${IMAGE_URL}")
+        echo "IMAGE_FILENAME=${IMAGE_FILENAME}" >> $GITHUB_ENV
+
+        # Parse filename: AlmaLinux-9-OCI-9.6-9.6.20250522130000.x86_64.qcow2
+        # Pattern: AlmaLinux-{major}-OCI-{version}-{release}.{arch}.qcow2
+
+        if [[ ! "${IMAGE_FILENAME}" =~ AlmaLinux-([0-9]+)-OCI-([0-9.]+)-([0-9.]+)\.(x86_64|aarch64)\.qcow2 ]]; then
+          echo "[Error] Invalid image filename format: '${IMAGE_FILENAME}'"
+          echo "Expected format: AlmaLinux-{major}-OCI-{version}-{release}.{arch}.qcow2"
+          exit 1
+        fi
+
+        ALMA_MAJOR="${BASH_REMATCH[1]}"
+        ALMA_VERSION="${BASH_REMATCH[2]}"
+        ALMA_RELEASE="${BASH_REMATCH[3]}"
+        ALMA_ARCH="${BASH_REMATCH[4]}"
+
+        echo "[Debug] Parsed metadata:"
+        echo "  Major Version: ${ALMA_MAJOR}"
+        echo "  Version: ${ALMA_VERSION}"
+        echo "  Release: ${ALMA_RELEASE}"
+        echo "  Architecture: ${ALMA_ARCH}"
+
+        # Convert aarch64 to arm64 for display if needed
+        DISPLAY_ARCH="${ALMA_ARCH}"
+        [[ "${ALMA_ARCH}" == "aarch64" ]] && DISPLAY_ARCH="AArch64"
+
+        echo "ALMA_MAJOR=${ALMA_MAJOR}" >> $GITHUB_ENV
+        echo "ALMA_VERSION=${ALMA_VERSION}" >> $GITHUB_ENV
+        echo "ALMA_RELEASE=${ALMA_RELEASE}" >> $GITHUB_ENV
+        echo "ALMA_ARCH=${ALMA_ARCH}" >> $GITHUB_ENV
+        echo "DISPLAY_ARCH=${DISPLAY_ARCH}" >> $GITHUB_ENV
+        echo "IMAGE_DISPLAY_NAME=AlmaLinux OS ${ALMA_MAJOR} ${DISPLAY_ARCH} ${ALMA_RELEASE}" >> $GITHUB_ENV
+
+    # - name: Get corresponding Marketplace Listing OCID
+    #   run: |
+    #     # Get the listing OCID based on version and architecture
+    #     # Similar to AWS marketplace product mapping
+
+    #     case "AlmaLinux OS ${{ env.ALMA_MAJOR }} ${{ env.ALMA_ARCH }}" in
+    #       "AlmaLinux OS 8 x86_64")    LISTING_OCID="ocid1.appcataloglisting.oc1..placeholder_8_x86_64" ;;
+    #       "AlmaLinux OS 8 aarch64")   LISTING_OCID="ocid1.appcataloglisting.oc1..placeholder_8_aarch64" ;;
+    #       "AlmaLinux OS 9 x86_64")    LISTING_OCID="ocid1.appcataloglisting.oc1..placeholder_9_x86_64" ;;
+    #       "AlmaLinux OS 9 aarch64")   LISTING_OCID="ocid1.appcataloglisting.oc1..placeholder_9_aarch64" ;;
+    #       "AlmaLinux OS 10 x86_64")   LISTING_OCID="ocid1.appcataloglisting.oc1..placeholder_10_x86_64" ;;
+    #       "AlmaLinux OS 10 aarch64")  LISTING_OCID="ocid1.appcataloglisting.oc1..placeholder_10_aarch64" ;;
+    #       *) echo "[Error] Unsupported AlmaLinux release: 'AlmaLinux OS ${{ env.ALMA_MAJOR }} ${{ env.ALMA_ARCH }}'"; exit 1 ;;
+    #     esac
+
+    #     # For testing, use a test listing if not public
+    #     if [[ "${{ inputs.public_listing }}" == "false" ]]; then
+    #       echo "[Debug] Using test listing (public_listing=false)"
+    #       LISTING_OCID="ocid1.appcataloglisting.oc1..test_listing"
+    #     fi
+
+    #     echo "LISTING_OCID=${LISTING_OCID}" >> $GITHUB_ENV
+    #     echo "[Debug] Marketplace Listing OCID: ${LISTING_OCID}"
+
+    - name: Download qcow2 image
+      run: |
+        # Download the qcow2 file from provided URL
+        echo "[Debug] Downloading image from: ${{ inputs.image_url }}"
+        wget -q --show-progress "${{ inputs.image_url }}" -O "${{ env.IMAGE_FILENAME }}"
+
+        # Verify download
+        if [[ ! -f "${{ env.IMAGE_FILENAME }}" ]]; then
+          echo "[Error] Failed to download image"
+          exit 1
+        fi
+
+        # Show file size
+        ls -lh "${{ env.IMAGE_FILENAME }}"
+
+    - name: Upload to OCI Object Storage
+      run: |
+        # Upload qcow2 to OCI Object Storage
+        BUCKET_NAME="${{ vars.OCI_OBJECT_STORAGE_BUCKET }}"
+        NAMESPACE="${{ secrets.OCI_OBJECT_STORAGE_NAMESPACE }}"
+        OBJECT_NAME="images/${{ env.ALMA_MAJOR }}/${{ env.ALMA_VERSION }}/oci/${{ env.ALMA_RELEASE }}/${{ env.IMAGE_FILENAME }}"
+
+        echo "[Debug] Uploading to Object Storage:"
+        echo "  Namespace: ${NAMESPACE}"
+        echo "  Bucket: ${BUCKET_NAME}"
+        echo "  Object: ${OBJECT_NAME}"
+
+        oci os object put \
+          --bucket-name "${BUCKET_NAME}" \
+          --namespace "${NAMESPACE}" \
+          --file "${{ env.IMAGE_FILENAME }}" \
+          --name "${OBJECT_NAME}" \
+          --force
+
+        echo "OBJECT_NAME=${OBJECT_NAME}" >> $GITHUB_ENV
+        echo "[Debug] Upload completed successfully"
+
+    # - name: Import as OCI Compute Image
+    #   id: import-image
+    #   run: |
+    #     # Import qcow2 from Object Storage as OCI Compute custom image
+    #     COMPARTMENT_ID="${{ secrets.OCI_COMPARTMENT_ID }}"
+    #     BUCKET_NAME="${{ vars.OCI_OBJECT_STORAGE_BUCKET }}"
+    #     NAMESPACE="${{ secrets.OCI_OBJECT_STORAGE_NAMESPACE }}"
+
+    #     echo "[Debug] Importing compute image:"
+    #     echo "  Display Name: ${{ env.IMAGE_DISPLAY_NAME }}"
+    #     echo "  Compartment: ${COMPARTMENT_ID}"
+
+    #     # Start image import
+    #     IMPORT_OUTPUT=$(oci compute image import from-object \
+    #       --compartment-id "${COMPARTMENT_ID}" \
+    #       --display-name "${{ env.IMAGE_DISPLAY_NAME }}" \
+    #       --namespace "${NAMESPACE}" \
+    #       --bucket-name "${BUCKET_NAME}" \
+    #       --name "${{ env.OBJECT_NAME }}" \
+    #       --source-image-type QCOW2 \
+    #       --launch-mode PARAVIRTUALIZED \
+    #       --operating-system "AlmaLinux" \
+    #       --operating-system-version "${{ env.ALMA_VERSION }}" \
+    #       --wait-for-state AVAILABLE \
+    #       2>&1)
+
+    #     echo "${IMPORT_OUTPUT}"
+
+    #     # Extract image OCID from output
+    #     IMAGE_OCID=$(echo "${IMPORT_OUTPUT}" | grep -oP '"id": "\K[^"]+' | head -1)
+
+    #     if [[ -z "${IMAGE_OCID}" ]]; then
+    #       echo "[Error] Failed to extract image OCID from import output"
+    #       exit 1
+    #     fi
+
+    #     echo "IMAGE_OCID=${IMAGE_OCID}" >> $GITHUB_ENV
+    #     echo "[Debug] Image OCID: ${IMAGE_OCID}"
+
+    # - name: Update Marketplace Listing
+    #   if: inputs.release_to_marketplace
+    #   run: |
+    #     # Update the marketplace listing with the new image version
+    #     # Note: This step requires proper OCI Marketplace Publisher permissions
+
+    #     echo "[Debug] Updating Marketplace Listing"
+    #     echo "  Listing OCID: ${{ env.LISTING_OCID }}"
+    #     echo "  Image OCID: ${{ env.IMAGE_OCID }}"
+    #     echo "  Version: ${{ env.ALMA_RELEASE }}"
+
+    #     # The exact command structure depends on Oracle's Marketplace Publisher API
+    #     # This is a placeholder showing the conceptual approach
+
+    #     # Option 1: Using OCI CLI marketplace-publisher commands (if available)
+    #     # oci marketplace-publisher listing-revision create \
+    #     #   --listing-id "${{ env.LISTING_OCID }}" \
+    #     #   --package-version "${{ env.ALMA_RELEASE }}" \
+    #     #   --image-id "${{ env.IMAGE_OCID }}"
+
+    #     # Option 2: Manual process notification
+    #     echo "[Info] Marketplace listing update requires manual action in Oracle Partner Portal"
+    #     echo "Please add the following image to listing ${{ env.LISTING_OCID }}:"
+    #     echo "  Image OCID: ${{ env.IMAGE_OCID }}"
+    #     echo "  Version: ${{ env.ALMA_RELEASE }}"
+    #     echo "  Display Name: ${{ env.IMAGE_DISPLAY_NAME }}"
+
+    #     # Store information for notification
+    #     echo "MARKETPLACE_STATUS=pending_manual_approval" >> $GITHUB_ENV
+
+    # - name: Print job summary
+    #   run: |
+    #     {
+    #       echo "## Oracle Cloud Marketplace Image Release"
+    #       echo ""
+    #       echo "### Image Details"
+    #       echo "- **Image Name**: \`${{ env.IMAGE_DISPLAY_NAME }}\`"
+    #       echo "- **Image Filename**: \`${{ env.IMAGE_FILENAME }}\`"
+    #       echo "- **AlmaLinux Version**: ${{ env.ALMA_MAJOR }}.${{ env.ALMA_VERSION }}"
+    #       echo "- **Release**: ${{ env.ALMA_RELEASE }}"
+    #       echo "- **Architecture**: ${{ env.DISPLAY_ARCH }}"
+    #       echo ""
+    #       echo "### OCI Resources"
+    #       echo "- **Image OCID**: \`${{ env.IMAGE_OCID }}\`"
+    #       echo "- **Listing OCID**: \`${{ env.LISTING_OCID }}\`"
+    #       echo "- **Object Storage Path**: \`${{ env.OBJECT_NAME }}\`"
+    #       echo ""
+    #       echo "### Status"
+    #       echo "- **Released to Marketplace**: ${{ inputs.release_to_marketplace && '✅ Yes' || '❌ No (dry-run)' }}"
+    #       echo "- **Public Listing**: ${{ inputs.public_listing && '✅ Yes' || '❌ No (test)' }}"
+    #       if [[ "${{ inputs.release_to_marketplace }}" == "true" ]]; then
+    #         echo ""
+    #         echo "⚠️ **Manual Action Required**: Complete the marketplace listing update in [Oracle Partner Portal](https://partner.cloudmarketplace.oracle.com)"
+    #       fi
+    #     } >> "$GITHUB_STEP_SUMMARY"
+
+    # - name: Send notification to Mattermost
+    #   uses: mattermost/action-mattermost-notify@master
+    #   if: inputs.notify_mattermost
+    #   with:
+    #     MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+    #     MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
+    #     MATTERMOST_USERNAME: ${{ github.triggering_actor }}
+    #     TEXT: |
+    #       :almalinux: **${{ env.IMAGE_DISPLAY_NAME }}** uploaded to Oracle Cloud Infrastructure, by the GitHub [Action](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+    #       **Image OCID**: `${{ env.IMAGE_OCID }}`
+
+    #       **Listing OCID**: `${{ env.LISTING_OCID }}`
+
+    #       **Version**: `${{ env.ALMA_RELEASE }}`
+
+    #       **Released to Marketplace**: ${{ inputs.release_to_marketplace && '✅' || '❌ (dry-run)'}}
+
+    #       ${{ inputs.release_to_marketplace && '⚠️ Manual action required: Complete marketplace listing update in Oracle Partner Portal' || '' }}

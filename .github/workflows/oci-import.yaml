@@ -1,0 +1,123 @@
+name: OCI image import
+
+on:
+  workflow_dispatch:
+      inputs:
+
+        image_url:
+          description: "URL to publicly accessible qcow2 file"
+          required: true
+          default: ''
+
+        notify_mattermost:
+          description: "Send notification to Mattermost"
+          required: true
+          type: boolean
+          default: false
+
+jobs:
+  import-image-to-oci:
+    name: "Import to OCI"
+    runs-on: ubuntu-24.04
+    env:
+      OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+      OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install OCI CLI
+      run: |
+        # Install OCI CLI
+        curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
+        chmod +x install.sh
+        ./install.sh --accept-all-defaults
+        echo "$HOME/bin" >> $GITHUB_PATH
+
+    - name: Configure OCI CLI
+      run: |
+        # Configure OCI CLI using environment variables
+        mkdir -p ~/.oci
+        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
+        chmod 600 ~/.oci/key.pem
+
+        # Verify OCI CLI is working
+        oci --version
+
+    - name: Log into OCIR
+      uses: oracle-actions/login-ocir@v1.3.0
+      id: login-ocir
+      with:
+        auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
+
+    - name: Parse image filename
+      run: |
+        # Extract filename from URL
+        IMAGE_URL="${{ inputs.image_url }}"
+        IMAGE_FILENAME=$(basename "${IMAGE_URL}")
+        echo "IMAGE_FILENAME=${IMAGE_FILENAME}" >> $GITHUB_ENV
+
+    - name: Download qcow2 image
+      run: |
+        # Download the qcow2 file from provided URL
+        echo "[Debug] Downloading image from: ${{ inputs.image_url }}"
+        wget -q --show-progress "${{ inputs.image_url }}" -O "${{ env.IMAGE_FILENAME }}"
+
+        # Verify download
+        if [[ ! -f "${{ env.IMAGE_FILENAME }}" ]]; then
+          echo "[Error] Failed to download image"
+          exit 1
+        fi
+
+        # Show file size
+        ls -lh "${{ env.IMAGE_FILENAME }}"
+
+    - name: Upload to OCI Object Storage
+      run: |
+        # Upload qcow2 to OCI Object Storage
+        BUCKET_NAME="${{ secrets.OCI_OBJECT_STORAGE_BUCKET }}"
+        NAMESPACE="${{ secrets.OCI_OBJECT_STORAGE_NAMESPACE }}"
+        OBJECT_NAME="images/${{ env.IMAGE_FILENAME }}"
+
+        echo "[Debug] Uploading to Object Storage:"
+        echo "  Namespace: ${NAMESPACE}"
+        echo "  Bucket: ${BUCKET_NAME}"
+        echo "  Object: ${OBJECT_NAME}"
+
+        oci os object put \
+          --bucket-name "${BUCKET_NAME}" \
+          --namespace "${NAMESPACE}" \
+          --file "${{ env.IMAGE_FILENAME }}" \
+          --name "${OBJECT_NAME}" \
+          --force
+
+        echo "OBJECT_NAME=${OBJECT_NAME}" >> $GITHUB_ENV
+        echo "[Debug] Upload completed successfully"
+
+    - name: Print job summary
+      run: |
+        {
+          echo "## OCI Image Import"
+          echo ""
+          echo "- **Image Filename**: \`${{ env.IMAGE_FILENAME }}\`"
+          echo "- **Object Storage Path**: \`${{ env.OBJECT_NAME }}\`"
+          echo ""
+          echo "ℹ️ For marketplace publishing, use the [OCI Marketplace Publish workflow](../../actions/workflows/oci-marketplace-publish.yml)"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Send notification to Mattermost
+      uses: mattermost/action-mattermost-notify@master
+      if: inputs.notify_mattermost
+      with:
+        MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+        MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
+        MATTERMOST_USERNAME: ${{ github.triggering_actor }}
+        TEXT: |
+          :almalinux: **${{ env.IMAGE_FILENAME }}** imported to Oracle Cloud Infrastructure, by the GitHub [Action](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          **Object Storage Path**: `${{ env.OBJECT_NAME }}`
+
+          For marketplace publishing, use the OCI Marketplace Publish workflow.
