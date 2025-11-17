@@ -63,4 +63,8 @@ sed -i "s/^.*requiretty/# Defaults requiretty/" /etc/sudoers
 # permit root login via SSH with password authetication
 echo "PermitRootLogin yes" > /etc/ssh/sshd_config.d/01-permitrootlogin.conf
 
+# To fix Ansible vis ssh connection error:
+# mux_client_request_session: read from master failed: Broken pipe Failed to connect to new control master
+dnf -y downgrade openssh-9.9p1-15.el10.alma.1
+
 %end
