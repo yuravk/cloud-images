@@ -72,14 +72,14 @@ variable "iso_url_kitten_10_x86_64" {
   description = "The latest AlmaLinux OS Kitten 10 x86_64 ISO"
 
   type    = string
-  default = "https://kitten.repo.almalinux.org/10-kitten/isos/x86_64/AlmaLinux-Kitten-10-latest-x86_64-boot.iso"
+  default = "https://centos-stream.ip-connect.info/10-stream/BaseOS/x86_64/iso/CentOS-Stream-10-latest-x86_64-boot.iso"
 }
 
 variable "iso_checksum_kitten_10_x86_64" {
   description = "The checksum of latest AlmaLinux OS Kitten 10 x86_64 ISO"
 
   type    = string
-  default = "file:https://kitten.repo.almalinux.org/10-kitten/isos/x86_64/CHECKSUM"
+  default = "file:https://centos-stream.ip-connect.info/10-stream/BaseOS/x86_64/iso/CentOS-Stream-10-latest-x86_64-boot.iso.SHA256SUM"
 }
 
 variable "iso_url_kitten_10_aarch64" {

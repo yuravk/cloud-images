@@ -1,6 +1,6 @@
 # AlmaLinux OS Kitten 10 kickstart file for Azure VM images on x86_64
 
-url --url https://kitten.repo.almalinux.org/10-kitten/BaseOS/x86_64/os
+url --url https://centos-stream.ip-connect.info/10-stream/BaseOS/x86_64/os/
 text
 lang en_US.UTF-8
 keyboard us
