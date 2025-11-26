@@ -1,6 +1,6 @@
 # AlmaLinux OS Kitten 10 kickstart file for Vagrant boxes with unified (BIOS+UEFI) boot on x86_64
 
-url --url https://kitten.repo.almalinux.org/10-kitten/BaseOS/x86_64/os
+url --url https://build.almalinux.org/pulp/content/prod/almalinux-kitten-10-baseos-x86_64/
 text
 lang en_US.UTF-8
 keyboard us
