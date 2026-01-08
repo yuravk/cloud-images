@@ -287,7 +287,7 @@ runs:
         repo-name: virtualbox
         keys-asc: https://download.virtualbox.org/virtualbox/debian/oracle_vbox_2016.asc
         update: true
-        install: virtualbox-7.1
+        install: virtualbox-7.2
 
     - name: Install VMware
       if: inputs.type == 'vagrant_vmware'
