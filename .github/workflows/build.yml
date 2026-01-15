@@ -180,7 +180,13 @@ jobs:
     needs: [init-data]
     if: ${{ needs.init-data.outputs.matrix_gh != '[]' }}
     # use runs-on runners if within the almalinux org, otherwise GH runners"
-    runs-on: "${{ github.repository_owner == 'AlmaLinux' && format('runs-on={0}/family=c7i.metal-24xl+c7a.metal-48xl+*8gd.metal*/image=ubuntu24-full-x64', github.run_id) || 'ubuntu-24.04' }}"
+    runs-on: >-
+      ${{
+        github.repository_owner == 'AlmaLinux' &&
+          format('runs-on={0}/family=c7i.metal-24xl+c7a.metal-48xl+*8gd.metal*/image=ubuntu24-full-x64', github.run_id)
+        ||
+        'ubuntu-24.04'
+      }}
     strategy:
       fail-fast: false
       matrix:
@@ -240,7 +246,7 @@ jobs:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
 
   # The job is to start self-hosted runner on AWS EC2 instance if not in the almalinux org
-  # It does nothing if in the almalinux org. 'Setup and start runner' step is skipped
+  # It does nothing if in the almalinux org, so 'Setup and start runner' step is skipped
   start-self-hosted-runner:
     name: ${{ matrix.variant }} ${{ matrix.matrix_sh }} runner
     if: ${{ inputs.self-hosted && needs.init-data.outputs.matrix_sh != '[]' }}
@@ -301,9 +307,35 @@ jobs:
 
   build-self-hosted:
     name: ${{ matrix.variant }} ${{ matrix.matrix_sh }} image
+    permissions:
+      id-token: write
+      contents: read
     if: ${{ inputs.self-hosted && needs.init-data.outputs.matrix_sh != '[]' }}
     needs: [init-data, start-self-hosted-runner]
-    runs-on: ${{ github.repository_owner == 'AlmaLinux' && ( contains(matrix.matrix_sh, 'x86_64') && format('runs-on={0}/family=c5n.metal/ami={1}', github.run_id, vars.EC2_AMI_ID_AL9_X86_64 ) || format('runs-on={0}/family=a1.metal/image=almalinux-9-aarch64', github.run_id) ) || ( inputs.self_hosted_runner == 'aws-ec2' && github.run_id || matrix.matrix_sh ) }}
+    # If almalinux org, use RunsOn with:
+    # - AlmaLinux 9.x x86_64 specific AWS AMI ID (need to build Vagrant for VMware)
+    # - ubuntu24-full-arm64 for GCP on aarch64
+    #
+    # Otherwise use AWS EC2 Self-Hosted x86_64 or aarch64 runner set up with the 'start-self-hosted-runner' job above
+    #
+    # Or use manually set up runner. Vagrant for VirtualBox x86_64 runner configuration example:
+    # ./config.sh --url https://github.com/almalinux/cloud-images --token ***** --name vagrant_virtualbox-x86_64 --labels vagrant_virtualbox-x86_64 --no-default-labels --work _work --runnergroup default --replace
+    runs-on: >-
+      ${{
+        github.repository_owner == 'AlmaLinux' && (
+          contains(matrix.matrix_sh, 'x86_64') &&
+            format('runs-on={0}/family=c5n.metal/ami={1}', github.run_id, vars.EC2_AMI_ID_AL9_X86_64)
+          ||
+          contains(matrix.matrix_sh, 'gcp') &&
+            format('runs-on={0}/family=c7i.metal-24xl+c7a.metal-48xl+*8gd.metal*/image=ubuntu24-full-arm64', github.run_id)
+          ||
+          format('runs-on={0}/family=a1.metal/image=almalinux-9-aarch64', github.run_id)
+        )
+        ||
+        inputs.self_hosted_runner == 'aws-ec2' && github.run_id
+        ||
+        matrix.matrix_sh
+      }}
     strategy:
       fail-fast: false
       matrix:
