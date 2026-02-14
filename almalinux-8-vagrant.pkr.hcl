@@ -233,7 +233,7 @@ build {
   provisioner "shell" {
     expect_disconnect = true
     inline            = ["sudo rm -fr /etc/ssh/*host*key*"]
-    only              = [
+    only = [
       "hyperv-iso.almalinux-8",
       "qemu.almalinux-8-hyperv-x86_64",
     ]
