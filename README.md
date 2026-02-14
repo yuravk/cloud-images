@@ -756,6 +756,7 @@ mv versions.pkr.hcl versions.pkr.hcl.ignore
 
 * [Packer](https://www.packer.io/) `>= 1.7.0`
 * [Ansible](https://www.ansible.com/) `>= 2.12`
+  * When building AlmaLinux 8 images, the Ansible version has to be `<= 2.16` for compatibility reasons.
 * [VirtualBox](https://www.virtualbox.org/) (for VirtualBox images only)
 * [Parallels](https://www.parallels.com/) (for Parallels images only)
 * [VMWare Workstation](https://www.vmware.com/products/workstation-pro.html) (for VMWare images and Amazon AMI's only)
