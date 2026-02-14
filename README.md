@@ -110,12 +110,6 @@ See: [How to build UEFI and Secure Boot supported Images](https://github.com/Alm
 packer build -only=qemu.almalinux-9-gencloud-x86_64 .
 ```
 
-`x86_64` BIOS only:
-
-```sh
-packer build -only=qemu.almalinux-9-gencloud-bios-x86_64 .
-```
-
 `AArch64`:
 
 ```sh
@@ -540,12 +534,6 @@ packer build -only=qemu.almalinux-8-opennebula-aarch64 .
 packer build -only=qemu.almalinux-9-opennebula-x86_64 .
 ```
 
-`x86_64` BIOS only:
-
-```sh
-packer builder -only=qemu.almalinux-9-opennebula-bios-x86_64 .
-```
-
 `AArch64`:
 
 ```sh
@@ -578,12 +566,6 @@ packer build -only=qemu.almalinux-8-oci-aarch64 .
 `x86_64` Unified Boot (BIOS and UEFI):
 ```sh
 packer build -only=qemu.almalinux-9-oci-x86_64 .
-```
-
-`x86_64` BIOS only:
-
-```sh
-packer build -only=qemu.almalinux-9-oci-bios-x86_64 .
 ```
 
 `AArch64`
@@ -678,7 +660,7 @@ packer build -only=qemu.almalinux-8-azure-x86_64 .
 Debian and derivatives:
 
 ```sh
-packer build -var ovmf_code="/usr/share/OVMF/OVMF_CODE.secboot.fd" -var ovmf_vars="/usr/share/OVMF/OVMF_VARS.ms.fd" -only=qemu.almalinux-8-gencloud-uefi-x86_64 .
+packer build -var ovmf_code="/usr/share/OVMF/OVMF_CODE.secboot.fd" -var ovmf_vars="/usr/share/OVMF/OVMF_VARS.ms.fd" -only=qemu.almalinux-8-gencloud-x86_64 .
 ```
 
 or set the `ovmf_code` and  `ovmf_vars` Packer variables in `.auto.pkrvars.hcl` file:
