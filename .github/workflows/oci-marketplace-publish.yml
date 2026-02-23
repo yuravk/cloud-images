@@ -4,22 +4,32 @@ on:
   workflow_dispatch:
       inputs:
 
-        image_url:
-          description: "URL to publicly accessible qcow2 file"
+        image_source_type:
+          description: "Type of image source"
           required: true
+          type: choice
+          options:
+            - 'QCOW2 file URL'
+            - 'Compute Image OCID'
+            - 'Artifact OCID'
+
+        image_source_data:
+          description: "URL or OCID"
+          required: true
+          type: string
           default: ''
 
         release_to_marketplace:
           description: "Release the image to Marketplace listing"
           required: true
           type: boolean
-          default: true
+          default: false
 
         notify_mattermost:
           description: "Send notification to Mattermost"
           required: true
           type: boolean
-          default: false
+          default: true
 
 env:
   OCI_PUBLISHER_BASE_URL: https://cloud.oracle.com/publisher
@@ -38,6 +48,42 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Validate inputs
+      run: |
+        SOURCE_TYPE="${{ inputs.image_source_type }}"
+        SOURCE_DATA="${{ inputs.image_source_data }}"
+
+        if [ -z "${SOURCE_DATA}" ]; then
+          echo "[Error] image_source_data is empty"
+          exit 1
+        fi
+
+        case "${SOURCE_TYPE}" in
+          "QCOW2 file URL")
+            if [[ ! "${SOURCE_DATA}" =~ ^https?://.+\.qcow2$ ]]; then
+              echo "[Error] Invalid URL: '${SOURCE_DATA}'"
+              echo "Expected: a URL starting with http(s):// and ending with .qcow2"
+              exit 1
+            fi
+            ;;
+          "Compute Image OCID")
+            if [[ ! "${SOURCE_DATA}" =~ ^ocid1\.image\. ]]; then
+              echo "[Error] Invalid Compute Image OCID: '${SOURCE_DATA}'"
+              echo "Expected format: ocid1.image.oc1..<unique_id>"
+              exit 1
+            fi
+            ;;
+          "Artifact OCID")
+            if [[ ! "${SOURCE_DATA}" =~ ^ocid1\..+artifact ]]; then
+              echo "[Error] Invalid Artifact OCID: '${SOURCE_DATA}'"
+              echo "Expected format: ocid1.marketplacepublisherartifact.oc1..<unique_id>"
+              exit 1
+            fi
+            ;;
+        esac
+
+        echo "✅ Input validation passed: ${SOURCE_TYPE} = ${SOURCE_DATA:0:40}..."
 
     - name: Install OCI CLI and dependencies
       run: |
@@ -60,22 +106,164 @@ jobs:
         # Verify OCI CLI is working
         oci --version
 
-    - name: Parse image URL and filename
-      id: parse-image
+    - name: Get data of Artifact
+      if: inputs.image_source_type == 'Artifact OCID'
       run: |
+        # When source is an Artifact OCID, fetch the artifact data
+        # and extract the source Compute Image OCID
+        ARTIFACT_OCID="${{ inputs.image_source_data }}"
+        echo "ARTIFACT_ID=${ARTIFACT_OCID}" >> $GITHUB_ENV
+        echo "[Debug] Artifact OCID: ${ARTIFACT_OCID}"
+
+        # Get artifact details
+        set +e
+        ARTIFACT_DATA=$(oci marketplace-publisher artifact get \
+          --artifact-id "${ARTIFACT_OCID}" 2>&1)
+        GET_EXIT=$?
+        set -e
+
+        if [ ${GET_EXIT} -ne 0 ]; then
+          echo "[Error] Failed to get artifact data"
+          echo "${ARTIFACT_DATA}"
+          exit 1
+        fi
+
+        # Verify artifact is AVAILABLE
+        ARTIFACT_STATUS=$(echo "${ARTIFACT_DATA}" | jq -r '.data.status')
+        if [ "${ARTIFACT_STATUS}" != "AVAILABLE" ]; then
+          echo "[Error] Artifact is not AVAILABLE (status: ${ARTIFACT_STATUS})"
+          exit 1
+        fi
+
+        # Extract source Compute Image OCID from machine-image details
+        IMAGE_OCID=$(echo "${ARTIFACT_DATA}" | jq -r '.data."machine-image"."source-image-id" // empty')
+        if [ -z "${IMAGE_OCID}" ]; then
+          echo "[Error] Failed to extract source image ID from artifact"
+          echo "[Debug] Artifact data:"
+          echo "${ARTIFACT_DATA}" | jq '.data'
+          exit 1
+        fi
+
+        echo "IMAGE_OCID=${IMAGE_OCID}" >> $GITHUB_ENV
+        echo "[Debug] Source Compute Image OCID: ${IMAGE_OCID}"
+
+    - name: Get data of Compute Image
+      if: inputs.image_source_type == 'Compute Image OCID' || inputs.image_source_type == 'Artifact OCID'
+      run: |
+        # When source is a Compute Image OCID (or derived from Artifact),
+        # fetch the image data and derive the filename for Object Storage lookup
+        if [[ "${{ inputs.image_source_type }}" == "Artifact OCID" ]]; then
+          IMAGE_OCID="${{ env.IMAGE_OCID }}"
+        else
+          IMAGE_OCID="${{ inputs.image_source_data }}"
+        fi
+        echo "IMAGE_OCID=${IMAGE_OCID}" >> $GITHUB_ENV
+        echo "[Debug] Compute Image OCID: ${IMAGE_OCID}"
+
+        # Get image details
+        set +e
+        IMAGE_DATA=$(oci compute image get --image-id "${IMAGE_OCID}" 2>&1)
+        GET_EXIT=$?
+        set -e
+
+        if [ ${GET_EXIT} -ne 0 ]; then
+          echo "[Error] Failed to get compute image data"
+          echo "${IMAGE_DATA}"
+          exit 1
+        fi
+
+        # Verify image is AVAILABLE
+        IMAGE_STATE=$(echo "${IMAGE_DATA}" | jq -r '.data."lifecycle-state"')
+        if [ "${IMAGE_STATE}" != "AVAILABLE" ]; then
+          echo "[Error] Image is not AVAILABLE (state: ${IMAGE_STATE})"
+          exit 1
+        fi
+
+        # Extract display name (this is the CUSTOM_IMAGE_NAME set during import)
+        CUSTOM_IMAGE_NAME=$(echo "${IMAGE_DATA}" | jq -r '.data."display-name"')
+        IMAGE_FILENAME="${CUSTOM_IMAGE_NAME}.qcow2"
+
+        echo "[Debug] Display Name: ${CUSTOM_IMAGE_NAME}"
+        echo "[Debug] Derived Filename: ${IMAGE_FILENAME}"
+
+        echo "CUSTOM_IMAGE_NAME=${CUSTOM_IMAGE_NAME}" >> $GITHUB_ENV
+        echo "IMAGE_FILENAME=${IMAGE_FILENAME}" >> $GITHUB_ENV
+
+    - name: Get Object data from Storage
+      if: inputs.image_source_type == 'Compute Image OCID' || inputs.image_source_type == 'Artifact OCID'
+      run: |
+        # Find the corresponding object in OCI Object Storage
+        # Object path pattern: images/{major}/{version}/oci/{release}/{filename}.qcow2
+        BUCKET_NAME="${{ vars.OCI_OBJECT_STORAGE_BUCKET }}"
+        NAMESPACE="${{ secrets.OCI_OBJECT_STORAGE_NAMESPACE }}"
+
+        # Derive search prefix from CUSTOM_IMAGE_NAME (AlmaLinux-{major}-OCI-{version}-...)
+        SEARCH_MAJOR=$(echo "${{ env.CUSTOM_IMAGE_NAME }}" | cut -d'-' -f2)
+        SEARCH_VERSION=$(echo "${{ env.CUSTOM_IMAGE_NAME }}" | sed -n 's/AlmaLinux-[0-9]*-OCI-\([0-9.]*\)-.*/\1/p')
+        SEARCH_PREFIX="images/${SEARCH_MAJOR}/${SEARCH_VERSION}/oci/"
+
+        echo "[Debug] Searching Object Storage for: ${SEARCH_PREFIX}*/${{ env.IMAGE_FILENAME }}"
+        echo "[Debug] Namespace: ${NAMESPACE}"
+        echo "[Debug] Bucket: ${BUCKET_NAME}"
+
+        set +e
+        OBJECT_LIST=$(oci os object list \
+          --bucket-name "${BUCKET_NAME}" \
+          --namespace "${NAMESPACE}" \
+          --prefix "${SEARCH_PREFIX}" \
+          --all \
+          2>&1)
+        LIST_EXIT=$?
+        set -e
+
+        if [ ${LIST_EXIT} -ne 0 ]; then
+          echo "[Error] Failed to list objects in Object Storage"
+          echo "${OBJECT_LIST}"
+          exit 1
+        fi
+
+        # Find the object whose name ends with our image filename
+        OBJECT_NAME=$(echo "${OBJECT_LIST}" | jq -r \
+          --arg fn "${{ env.IMAGE_FILENAME }}" \
+          '[.data[] | select(.name | endswith($fn))] | sort_by(.name) | reverse | .[0].name // empty')
+
+        if [ -z "${OBJECT_NAME}" ]; then
+          echo "[Error] Object not found in Object Storage matching: ${{ env.IMAGE_FILENAME }}"
+          echo "[Error] Search prefix was: ${SEARCH_PREFIX}"
+          exit 1
+        fi
+
+        echo "[Debug] Found object: ${OBJECT_NAME}"
+        echo "OBJECT_NAME=${OBJECT_NAME}" >> $GITHUB_ENV
+
+        # Construct the full Object Storage URL (used by "Parse image URL and filename")
+        OBJECT_URL="https://objectstorage.${{ vars.OCI_CLI_REGION }}.oraclecloud.com/n/${NAMESPACE}/b/${BUCKET_NAME}/o/${OBJECT_NAME}"
+        echo "[Debug] Object URL: ${OBJECT_URL}"
+        echo "OBJECT_URL=${OBJECT_URL}" >> $GITHUB_ENV
+
+    - name: Parse image URL and filename
+      run: |
+        # Determine IMAGE_URL based on source type:
+        #   'QCOW2 file URL'                      → use the input URL directly
+        #   'Compute Image OCID' / 'Artifact OCID' → use the Object Storage URL resolved earlier
+        if [[ "${{ inputs.image_source_type }}" == "QCOW2 file URL" ]]; then
+          IMAGE_URL="${{ inputs.image_source_data }}"
+        else
+          IMAGE_URL="${{ env.OBJECT_URL }}"
+        fi
+
         # Extract filename and path from URL
-        IMAGE_URL="${{ inputs.image_url }}"
         IMAGE_FILENAME=$(basename "${IMAGE_URL}")
         IMAGE_PATH=$(dirname "${IMAGE_URL}")
         echo "IMAGE_FILENAME=${IMAGE_FILENAME}" >> $GITHUB_ENV
 
         # Parse filename: AlmaLinux-8-OCI-8.10-20260202.x86_64.qcow2
         #             or: AlmaLinux-10-OCI-10.1-20260216.0.aarch64.qcow2
-        # Pattern: AlmaLinux-{major}-OCI-{version}-{date}.{arch}.qcow2
+        # Pattern: AlmaLinux-{major}-OCI-{version}-{date}[.{index}].{arch}.qcow2
 
         if [[ ! "${IMAGE_FILENAME}" =~ AlmaLinux-([0-9]+)-OCI-([0-9.]+)-([0-9]+)((\.[0-9]+)?)\.(x86_64|aarch64)\.qcow2 ]]; then
           echo "[Error] Invalid image filename format: '${IMAGE_FILENAME}'"
-          echo "Expected format: AlmaLinux-{major}-OCI-{version}-{date}.{arch}.qcow2"
+          echo "Expected format: AlmaLinux-{major}-OCI-{version}-{date}[.{index}].{arch}.qcow2"
           echo "Example: AlmaLinux-8-OCI-8.10-20260202.x86_64.qcow2"
           echo "Example: AlmaLinux-10-OCI-10.1-20260216.0.aarch64.qcow2"
           exit 1
@@ -107,6 +295,8 @@ jobs:
         esac
 
         echo "[Debug] Parsed metadata:"
+        echo "  Source Type: ${{ inputs.image_source_type }}"
+        echo "  IMAGE_URL: ${IMAGE_URL}"
         echo "  Major Version: ${ALMA_MAJOR}"
         echo "  Version: ${ALMA_VERSION}"
         echo "  Code Name: ${ALMA_CODE_NAME}"
@@ -126,13 +316,17 @@ jobs:
         echo "ALMA_ARCH=${ALMA_ARCH}" >> $GITHUB_ENV
         echo "DISPLAY_ARCH=${DISPLAY_ARCH}" >> $GITHUB_ENV
         echo "IMAGE_DISPLAY_NAME=AlmaLinux OS ${ALMA_VERSION} ${ALMA_ARCH} \`${ALMA_RELEASE}\`" >> $GITHUB_ENV
-        echo "CUSTOM_IMAGE_NAME=${IMAGE_FILENAME%.*}" >> $GITHUB_ENV
+        # Only set CUSTOM_IMAGE_NAME if not already set (Compute Image / Artifact paths set it earlier)
+        if [ -z "${{ env.CUSTOM_IMAGE_NAME }}" ]; then
+          echo "CUSTOM_IMAGE_NAME=${IMAGE_FILENAME%.*}" >> $GITHUB_ENV
+        fi
 
     - name: Download qcow2 image
+      if: inputs.image_source_type == 'QCOW2 file URL'
       run: |
         # Download the qcow2 file from provided URL
-        echo "[Debug] Downloading image from: ${{ inputs.image_url }}"
-        curl --fail -s "${{ inputs.image_url }}" -o "${{ env.IMAGE_FILENAME }}"
+        echo "[Debug] Downloading image from: ${{ inputs.image_source_data }}"
+        curl --fail -s "${{ inputs.image_source_data }}" -o "${{ env.IMAGE_FILENAME }}"
 
         # Verify download
         if [[ ! -f "${{ env.IMAGE_FILENAME }}" ]]; then
@@ -147,6 +341,7 @@ jobs:
         fi
 
     - name: Upload to OCI Object Storage
+      if: inputs.image_source_type == 'QCOW2 file URL'
       run: |
         # Upload qcow2 to OCI Object Storage
         BUCKET_NAME="${{ vars.OCI_OBJECT_STORAGE_BUCKET }}"
@@ -169,7 +364,7 @@ jobs:
         echo "[Debug] Upload completed successfully"
 
     - name: Import as OCI Compute Image
-      id: import-image
+      if: inputs.image_source_type == 'QCOW2 file URL'
       run: |
         # Import qcow2 from Object Storage as OCI Compute custom image
         COMPARTMENT_ID="${{ secrets.OCI_COMPARTMENT_ID }}"
@@ -272,6 +467,7 @@ jobs:
         fi
 
     - name: Configure Image Capabilities Schema
+      if: inputs.image_source_type == 'QCOW2 file URL'
       run: |
         # Create/update image capability schema for the custom image
         # Reference: https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/configuringimagecapabilities.htm
@@ -423,12 +619,8 @@ jobs:
         echo "  Multipath Device Support: Enabled"
         echo "  IPv6 Only: Enabled"
 
-    # - name: Temporary step to set IMAGE_OCID, ARTIFACT_ID
-    #   run: |
-    #     echo "IMAGE_OCID=" >> $GITHUB_ENV
-    #     echo "ARTIFACT_ID=" >> $GITHUB_ENV
-
     - name: Create the new Artifact
+      if: inputs.release_to_marketplace && inputs.image_source_type != 'Artifact OCID'
       run: |
         # Get the image shape compatibility entries
         # Filter out the shapes that are not supported by the Marketplace:
@@ -683,10 +875,6 @@ jobs:
         echo "DRAFT_REVISION_ID=${DRAFT_REVISION_ID}" >> $GITHUB_ENV
         echo "[Debug] Draft Revision ID: ${DRAFT_REVISION_ID}"
 
-    # - name: Temporary step to set DRAFT_REVISION_ID
-    #   run: |
-    #     echo "DRAFT_REVISION_ID=" >> $GITHUB_ENV
-
     - name: Update Draft Revision Details
       if: inputs.release_to_marketplace
       run: |
@@ -825,10 +1013,6 @@ jobs:
           done <<< "${ALL_PKG_IDS}"
         fi
 
-    # - name: Temporary step to set PACKAGE_VERSION
-    #   run: |
-    #     echo "PACKAGE_VERSION=" >> $GITHUB_ENV
-
     - name: Create Package in Draft Revision
       if: inputs.release_to_marketplace
       run: |
@@ -875,10 +1059,6 @@ jobs:
         echo "PACKAGE_ID=${PACKAGE_ID}" >> $GITHUB_ENV
         echo "[Debug] Package ID: ${PACKAGE_ID}"
 
-    # - name: Temporary step to set PACKAGE_ID
-    #   run: |
-    #     echo "PACKAGE_ID=" >> $GITHUB_ENV
-
     - name: Submit Draft Revision for Review
       if: inputs.release_to_marketplace
       run: |
@@ -909,20 +1089,25 @@ jobs:
     - name: Print job summary
       run: |
         {
-          echo "## Oracle Cloud Marketplace Image Release"
+          echo "## Oracle Cloud Marketplace Image Publish"
+          echo "- **Image Source Type**: ${{ inputs.image_source_type }}"
           echo ""
           echo "### Image Details"
-          echo "- **Image Name**: ${{ env.IMAGE_DISPLAY_NAME }}"
-          echo "- **Image Filename**: \`${{ env.IMAGE_FILENAME }}\`"
-          echo "- **Release Version**: \`${{ env.ALMA_VERSION }}.${{ env.ALMA_RELEASE }}\`"
+          echo '- **Name**: ${{ env.IMAGE_DISPLAY_NAME }}'
+          echo "- **Filename**: \`${{ env.IMAGE_FILENAME }}\`"
+          echo "- **Release Version**: \`${{ env.ALMA_VERSION }}.${{ env.ALMA_RELEASE || env.ALMA_DATE }}\`"
           echo ""
           echo "### OCI Resources"
-          echo "- **Object Storage Path**: ${{ env.OBJECT_NAME }}"
+          if [[ -n "${{ env.OBJECT_NAME }}" ]]; then
+            echo "- **Object Storage Path**: \`${{ env.OBJECT_NAME }}\`"
+          fi
           echo "- **Compute Custom Image**: [${{ env.CUSTOM_IMAGE_NAME }}](${{ env.OCI_COMPUTE_BASE_URL }}/images/${{ env.IMAGE_OCID }}?region=${{ vars.OCI_CLI_REGION }})"
-          echo "- **Marketplace Artifact**: [${{ env.CUSTOM_IMAGE_NAME }}](${{ env.OCI_PUBLISHER_BASE_URL }}/artifact/${{ env.ARTIFACT_ID }}?region=${{ vars.OCI_CLI_REGION }})"
           echo "- **Marketplace Terms**: [${{ env.TERMS_COLLECTION_NAME }}](${{ env.OCI_PUBLISHER_BASE_URL }}/terms/${{ env.TERMS_COLLECTION_ID }}?region=${{ vars.OCI_CLI_REGION }}) / [${{ env.TERM_VERSION_NAME }}](${{ env.OCI_PUBLISHER_BASE_URL }}/terms/${{ env.TERMS_COLLECTION_ID }}/${{ env.TERM_VERSION_ID }}?region=${{ vars.OCI_CLI_REGION }})"
           echo "- **Marketplace Listing**: [${{ env.LISTING_NAME }}](${{ env.OCI_PUBLISHER_BASE_URL }}/listing/${{ env.LISTING_OCID }}/listingRevisions?region=${{ vars.OCI_CLI_REGION }})"
           echo "- **Source Listing Revision**: [${{ env.LISTING_REVISION_NAME }}](${{ env.OCI_PUBLISHER_BASE_URL }}/listing/${{ env.LISTING_OCID }}/${{ env.LISTING_REVISION_ID }}?region=${{ vars.OCI_CLI_REGION }})"
+          if [[ "${{ inputs.release_to_marketplace }}" == "true" ]] || [[ "${{ inputs.image_source_type }}" == "Artifact OCID" ]]; then
+            echo "- **Marketplace Artifact**: [${{ env.CUSTOM_IMAGE_NAME }}](${{ env.OCI_PUBLISHER_BASE_URL }}/artifact/${{ env.ARTIFACT_ID }}?region=${{ vars.OCI_CLI_REGION }})"
+          fi
           if [[ "${{ inputs.release_to_marketplace }}" == "true" ]]; then
             echo "- **Draft Listing Revision**: [${{ env.LISTING_REVISION_NAME }}](${{ env.OCI_PUBLISHER_BASE_URL }}/listing/${{ env.LISTING_OCID }}/${{ env.DRAFT_REVISION_ID }}?region=${{ vars.OCI_CLI_REGION }})"
             echo "- **Revision Package**: \`${{ env.PACKAGE_VERSION }}\` (\`${{ env.PACKAGE_ID }}\`)"
@@ -935,7 +1120,13 @@ jobs:
             echo "Check it on the [Oracle Cloud Console](${{ env.OCI_PUBLISHER_BASE_URL }}/listing/${{ env.LISTING_OCID }}/${{ env.DRAFT_REVISION_ID }}?region=${{ vars.OCI_CLI_REGION }})"
             echo "Publish it from there manually once it is approved"
           else
-            echo "❌ **Marketplace release was not requested** (only image import and artifact creation were performed)"
+            if [[ "${{ inputs.image_source_type }}" == "QCOW2 file URL" ]]; then
+              echo "❌ **Marketplace release was not requested** (only Compute Image import and Object Storage upload performed)"
+            elif [[ "${{ inputs.image_source_type }}" == "Compute Image OCID" ]]; then
+              echo "❌ **Marketplace release was not requested** (only image data resolution performed)"
+            else
+              echo "❌ **Marketplace release was not requested** (only Artifact data resolution performed)"
+            fi
           fi
         } >> "$GITHUB_STEP_SUMMARY"
 
@@ -947,13 +1138,19 @@ jobs:
         MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
         MATTERMOST_USERNAME: ${{ github.triggering_actor }}
         TEXT: |
-          :almalinux: **${{ env.IMAGE_DISPLAY_NAME }}** released to Oracle Cloud Marketplace, by the GitHub [Action](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          :almalinux: **${{ env.IMAGE_DISPLAY_NAME }}**, publish to Oracle Cloud Marketplace, by the GitHub [Action](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
+          **Object Storage Path**: `${{ env.OBJECT_NAME }}`
           **Compute Custom Image**: [${{ env.CUSTOM_IMAGE_NAME }}](${{ env.OCI_COMPUTE_BASE_URL }}/images/${{ env.IMAGE_OCID }}?region=${{ vars.OCI_CLI_REGION }})
-          **Marketplace Artifact**: [${{ env.CUSTOM_IMAGE_NAME }}](${{ env.OCI_PUBLISHER_BASE_URL }}/artifact/${{ env.ARTIFACT_ID }}?region=${{ vars.OCI_CLI_REGION }})
           **Marketplace Listing**: [${{ env.LISTING_NAME }}](${{ env.OCI_PUBLISHER_BASE_URL }}/listing/${{ env.LISTING_OCID }}/listingRevisions?region=${{ vars.OCI_CLI_REGION }})
+          ${{ inputs.release_to_marketplace || inputs.image_source_type == 'Artifact OCID' && format('**Marketplace Artifact**: [{0}]({1}/artifact/{2}?region={3})', env.CUSTOM_IMAGE_NAME, env.OCI_PUBLISHER_BASE_URL, env.ARTIFACT_ID, vars.OCI_CLI_REGION) || '' }}
           ${{ inputs.release_to_marketplace && format('**Draft Revision**: [{0}]({1}/listing/{2}/{3}?region={4})', env.LISTING_REVISION_NAME, env.OCI_PUBLISHER_BASE_URL, env.LISTING_OCID, env.DRAFT_REVISION_ID, vars.OCI_CLI_REGION) || '' }}
           ${{ inputs.release_to_marketplace && format('**Revision Package**: `{0}` (`{1}`)', env.PACKAGE_VERSION, env.PACKAGE_ID) || '' }}
-          ${{ inputs.release_to_marketplace && '✅ Draft revision created, package added, and submitted for review.' || '❌ Marketplace release was not requested (only image import and artifact creation were performed)'}}
-          ${{ inputs.release_to_marketplace && format('Check it on the [Oracle Cloud Console]({0}/listing/{1}/{2}?region={3})', env.OCI_PUBLISHER_BASE_URL, env.LISTING_OCID, env.DRAFT_REVISION_ID, vars.OCI_CLI_REGION) || ''}}
-          ${{ inputs.release_to_marketplace && 'Publish it from there manually once it is approved' || ''}}
+
+          ${{ inputs.release_to_marketplace && '✅ Draft revision created, package added, and submitted for review.' || '' }}
+          ${{ inputs.release_to_marketplace && format('Check it on the [Oracle Cloud Console]({0}/listing/{1}/{2}?region={3})', env.OCI_PUBLISHER_BASE_URL, env.LISTING_OCID, env.DRAFT_REVISION_ID, vars.OCI_CLI_REGION) || '' }}
+          ${{ inputs.release_to_marketplace && 'Publish it from there manually once it is approved' || '' }}
+
+          ${{ ( ! inputs.release_to_marketplace && inputs.image_source_type == 'QCOW2 file URL' ) && '❌ **Marketplace release was not requested** (only Compute Image import and Object Storage upload performed)' || '' }}
+          ${{ ( ! inputs.release_to_marketplace && inputs.image_source_type == 'Compute Image OCID' ) && '❌ **Marketplace release was not requested** (only image data resolution performed)' || '' }}
+          ${{ ( ! inputs.release_to_marketplace && inputs.image_source_type == 'Artifact OCID' ) && '❌ **Marketplace release was not requested** (only Artifact data resolution performed)' || '' }}
