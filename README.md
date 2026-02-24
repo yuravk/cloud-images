@@ -203,7 +203,7 @@ packer build -only=qemu.almalinux-9-azure-aarch64 .
 `AArch64` with with 64k page size kernel:
 
 ```sh
-packer build -only=qemu.almalinux_9_azure_aarch64_64k .
+packer build -only=qemu.almalinux_9_azure_64k_aarch64 .
 ```
 
 #### AlmaLinux OS Kitten 10
