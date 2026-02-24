@@ -380,7 +380,7 @@ packer build -only=amazon-ebssurrogate.almalinux_kitten_10_ami_aarch64 .
 
 These input variables can be used for the cutomization of AMIs:
 - Volume type of AMI (default: gp3): `aws_volume_type`
-- Volume size of AMI (default: 4 GiB): `aws_volume_size`
+- Volume size of AMI (default: 5 GiB): `aws_volume_size`
 
 You can also speed-up the build time with upgrading the instance type for builder EC2 Instances:
 - Instance type of x86_64 builder EC2 Instance (default: `t3.small`): `aws_instance_type_x86_64`
