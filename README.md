@@ -164,9 +164,65 @@ qemu-img convert \
     AlmaLinux-9-GenericCloud-9."${IMAGE_MINOR_VERSION}"-"${IMAGE_TIMESTAMP}".s390x.qcow2
 ```
 
+#### AlmaLinux OS 10
+
+`x86_64` Unified Boot (BIOS and UEFI):
+
+See: [How to build UEFI and Secure Boot supported Images](https://github.com/AlmaLinux/cloud-images#how-to-build-uefi-and-secure-boot-supported-images)
+
+```sh
+packer build -only=qemu.almalinux_10_gencloud_x86_64 .
+```
+
+`x86_64_v2` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=qemu.almalinux_10_gencloud_x86_64_v2 .
+```
+
+`AArch64`:
+
+```sh
+packer build -only=qemu.almalinux_10_gencloud_aarch64 .
+```
+
+`ppc64le`:
+
+```sh
+packer build -only=qemu.almalinux_10_gencloud_ppc64le .
+```
+
+#### AlmaLinux OS Kitten 10
+
+`x86_64` Unified Boot (BIOS and UEFI):
+
+See: [How to build UEFI and Secure Boot supported Images](https://github.com/AlmaLinux/cloud-images#how-to-build-uefi-and-secure-boot-supported-images)
+
+```sh
+packer build -only=qemu.almalinux_kitten_10_gencloud_x86_64 .
+```
+
+`x86_64_v2` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=qemu.almalinux_kitten_10_gencloud_x86_64_v2 .
+```
+
+`AArch64`:
+
+```sh
+packer build -only=qemu.almalinux_kitten_10_gencloud_aarch64 .
+```
+
+`ppc64le`:
+
+```sh
+packer build -only=qemu.almalinux_kitten_10_gencloud_ppc64le .
+```
+
 ### Azure VM Images
 
-Both AlmaLinux OS 8 and 9 cloud images supports Generation 1 and Generation 2 VMs.
+AlmaLinux OS 8, 9, 10, and Kitten 10 cloud images support Generation 1 and Generation 2 VMs.
 
 
 #### AlmaLinux OS 8
@@ -204,6 +260,28 @@ packer build -only=qemu.almalinux-9-azure-aarch64 .
 
 ```sh
 packer build -only=qemu.almalinux_9_azure_64k_aarch64 .
+```
+
+#### AlmaLinux OS 10
+
+`x86_64` Unified Boot (BIOS and UEFI):
+
+See: [How to build UEFI and Secure Boot supported Images](https://github.com/AlmaLinux/cloud-images#how-to-build-uefi-and-secure-boot-supported-images)
+
+```sh
+packer build -only=qemu.almalinux_10_azure_x86_64 .
+```
+
+`AArch64`:
+
+```sh
+packer build -only=qemu.almalinux_10_azure_aarch64 .
+```
+
+`AArch64` with 64k page size kernel:
+
+```sh
+packer build -only=qemu.almalinux_10_azure_64k_aarch64 .
 ```
 
 #### AlmaLinux OS Kitten 10
@@ -361,6 +439,20 @@ packer build -only=amazon-ebssurrogate.almalinux_9_ami_x86_64 .
 packer build -only=amazon-ebssurrogate.almalinux_9_ami_aarch64 .
 ```
 
+##### AlmaLinux OS 10
+
+`x86_64` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=amazon-ebssurrogate.almalinux_10_ami_x86_64 .
+```
+
+`AArch64`:
+
+```sh
+packer build -only=amazon-ebssurrogate.almalinux_10_ami_aarch64 .
+```
+
 ##### AlmaLinux OS Kitten 10
 
 `x86_64` Unified Boot (BIOS and UEFI):
@@ -509,6 +601,170 @@ With custom Virtual Switch:
 packer build -var hyperv_switch_name="HyperV-vSwitch" -only="hyperv-iso.almalinux-9" .
 ```
 
+#### AlmaLinux OS 10
+
+Libvirt `x86_64` Unified Boot (BIOS and UEFI):
+
+See:
+
+* [How to build UEFI and Secure Boot supported Images](https://github.com/AlmaLinux/cloud-images#how-to-build-uefi-and-secure-boot-supported-images)
+
+* [How to use UEFI supported Vagrant boxes](https://github.com/AlmaLinux/cloud-images#how-to-use-uefi-supported-vagrant-boxes)
+
+```sh
+packer build -only=qemu.almalinux_10_vagrant_libvirt_x86_64 .
+```
+
+VirtualBox `x86_64` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=virtualbox-iso.almalinux_10_vagrant_virtualbox_x86_64 .
+```
+
+VMware Desktop `x86_64`:
+
+```sh
+packer build -only=vmware-iso.almalinux_10_vagrant_vmware_x86_64 .
+```
+
+VirtualBox `aarch64`:
+
+```sh
+packer build -only=virtualbox-iso.almalinux_10_vagrant_virtualbox_aarch64 .
+```
+
+VMware Desktop `aarch64`:
+
+```sh
+packer build -only=vmware-iso.almalinux_10_vagrant_vmware_aarch64 .
+```
+
+Parallels `aarch64`:
+
+```sh
+packer build -only=parallels-iso.almalinux_10_vagrant_parallels_aarch64 .
+```
+
+Hyper-V `x86_64` Unified Boot (BIOS and UEFI):
+
+```powershell
+packer build -only="hyperv-iso.almalinux_10_vagrant_hyperv_x86_64" .
+```
+
+With custom Virtual Switch:
+
+```sh
+packer build -var hyperv_switch_name="HyperV-vSwitch" -only="hyperv-iso.almalinux_10_vagrant_hyperv_x86_64" .
+```
+
+##### `x86_64_v2` variants
+
+Libvirt `x86_64_v2` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=qemu.almalinux_10_vagrant_libvirt_x86_64_v2 .
+```
+
+VirtualBox `x86_64_v2` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=virtualbox-iso.almalinux_10_vagrant_virtualbox_x86_64_v2 .
+```
+
+VMware Desktop `x86_64_v2`:
+
+```sh
+packer build -only=vmware-iso.almalinux_10_vagrant_vmware_x86_64_v2 .
+```
+
+Hyper-V `x86_64_v2` Unified Boot (BIOS and UEFI):
+
+```powershell
+packer build -only="hyperv-iso.almalinux_10_vagrant_hyperv_x86_64_v2" .
+```
+
+#### AlmaLinux OS Kitten 10
+
+Libvirt `x86_64` Unified Boot (BIOS and UEFI):
+
+See:
+
+* [How to build UEFI and Secure Boot supported Images](https://github.com/AlmaLinux/cloud-images#how-to-build-uefi-and-secure-boot-supported-images)
+
+* [How to use UEFI supported Vagrant boxes](https://github.com/AlmaLinux/cloud-images#how-to-use-uefi-supported-vagrant-boxes)
+
+```sh
+packer build -only=qemu.almalinux_kitten_10_vagrant_libvirt_x86_64 .
+```
+
+VirtualBox `x86_64` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=virtualbox-iso.almalinux_kitten_10_vagrant_virtualbox_x86_64 .
+```
+
+VMware Desktop `x86_64`:
+
+```sh
+packer build -only=vmware-iso.almalinux_kitten_10_vagrant_vmware_x86_64 .
+```
+
+VirtualBox `aarch64`:
+
+```sh
+packer build -only=virtualbox-iso.almalinux_kitten_10_vagrant_virtualbox_aarch64 .
+```
+
+VMware Desktop `aarch64`:
+
+```sh
+packer build -only=vmware-iso.almalinux_kitten_10_vagrant_vmware_aarch64 .
+```
+
+Parallels `aarch64`:
+
+```sh
+packer build -only=parallels-iso.almalinux_kitten_10_vagrant_parallels_aarch64 .
+```
+
+Hyper-V `x86_64` Unified Boot (BIOS and UEFI):
+
+```powershell
+packer build -only="hyperv-iso.almalinux_kitten_10_vagrant_hyperv_x86_64" .
+```
+
+With custom Virtual Switch:
+
+```sh
+packer build -var hyperv_switch_name="HyperV-vSwitch" -only="hyperv-iso.almalinux_kitten_10_vagrant_hyperv_x86_64" .
+```
+
+##### `x86_64_v2` variants
+
+Libvirt `x86_64_v2` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=qemu.almalinux_kitten_10_vagrant_libvirt_x86_64_v2 .
+```
+
+VirtualBox `x86_64_v2` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=virtualbox-iso.almalinux_kitten_10_vagrant_virtualbox_x86_64_v2 .
+```
+
+VMware Desktop `x86_64_v2`:
+
+```sh
+packer build -only=vmware-iso.almalinux_kitten_10_vagrant_vmware_x86_64_v2 .
+```
+
+Hyper-V `x86_64_v2` Unified Boot (BIOS and UEFI):
+
+```powershell
+packer build -only="hyperv-iso.almalinux_kitten_10_vagrant_hyperv_x86_64_v2" .
+```
+
 ### OpenNebula images
 
 
@@ -538,6 +794,46 @@ packer build -only=qemu.almalinux-9-opennebula-x86_64 .
 
 ```sh
 packer build -only=qemu.almalinux-9-opennebula-aarch64 .
+```
+
+#### AlmaLinux OS 10
+
+`x86_64` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=qemu.almalinux_10_opennebula_x86_64 .
+```
+
+`x86_64_v2` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=qemu.almalinux_10_opennebula_x86_64_v2 .
+```
+
+`AArch64`:
+
+```sh
+packer build -only=qemu.almalinux_10_opennebula_aarch64 .
+```
+
+#### AlmaLinux OS Kitten 10
+
+`x86_64` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=qemu.almalinux_kitten_10_opennebula_x86_64 .
+```
+
+`x86_64_v2` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=qemu.almalinux_kitten_10_opennebula_x86_64_v2 .
+```
+
+`AArch64`:
+
+```sh
+packer build -only=qemu.almalinux_kitten_10_opennebula_aarch64 .
 ```
 
 
@@ -572,6 +868,20 @@ packer build -only=qemu.almalinux-9-oci-x86_64 .
 
 ```sh
 packer build -only=qemu.almalinux-9-oci-aarch64 .
+```
+
+#### AlmaLinux OS 10
+
+`x86_64` Unified Boot (BIOS and UEFI):
+
+```sh
+packer build -only=qemu.almalinux-10-oci-x86_64 .
+```
+
+`AArch64`:
+
+```sh
+packer build -only=qemu.almalinux-10-oci-aarch64 .
 ```
 
 
