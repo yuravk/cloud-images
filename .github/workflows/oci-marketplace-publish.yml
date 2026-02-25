@@ -1143,7 +1143,7 @@ jobs:
           **Object Storage Path**: `${{ env.OBJECT_NAME }}`
           **Compute Custom Image**: [${{ env.CUSTOM_IMAGE_NAME }}](${{ env.OCI_COMPUTE_BASE_URL }}/images/${{ env.IMAGE_OCID }}?region=${{ vars.OCI_CLI_REGION }})
           **Marketplace Listing**: [${{ env.LISTING_NAME }}](${{ env.OCI_PUBLISHER_BASE_URL }}/listing/${{ env.LISTING_OCID }}/listingRevisions?region=${{ vars.OCI_CLI_REGION }})
-          ${{ inputs.release_to_marketplace || inputs.image_source_type == 'Artifact OCID' && format('**Marketplace Artifact**: [{0}]({1}/artifact/{2}?region={3})', env.CUSTOM_IMAGE_NAME, env.OCI_PUBLISHER_BASE_URL, env.ARTIFACT_ID, vars.OCI_CLI_REGION) || '' }}
+          ${{ ( inputs.release_to_marketplace || inputs.image_source_type == 'Artifact OCID' ) && format('**Marketplace Artifact**: [{0}]({1}/artifact/{2}?region={3})', env.CUSTOM_IMAGE_NAME, env.OCI_PUBLISHER_BASE_URL, env.ARTIFACT_ID, vars.OCI_CLI_REGION) || '' }}
           ${{ inputs.release_to_marketplace && format('**Draft Revision**: [{0}]({1}/listing/{2}/{3}?region={4})', env.LISTING_REVISION_NAME, env.OCI_PUBLISHER_BASE_URL, env.LISTING_OCID, env.DRAFT_REVISION_ID, vars.OCI_CLI_REGION) || '' }}
           ${{ inputs.release_to_marketplace && format('**Revision Package**: `{0}` (`{1}`)', env.PACKAGE_VERSION, env.PACKAGE_ID) || '' }}
 
