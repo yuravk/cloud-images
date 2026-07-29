@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository includes a GitHub Actions workflow for post-build sanity-testing AlmaLinux OS GenericCloud (`.qcow2`) images. Unlike the cloud-API counterparts ([`AZURE_TEST.md`](AZURE_TEST.md), [`OCI_TEST.md`](OCI_TEST.md)) which spawn a VM in the respective cloud, this workflow boots the image **directly under QEMU/KVM on the runner** with a cloud-init seed ISO, runs a small set of release / arch / disk / `dnf` assertions over SSH, collects the installed-package list, shuts the guest down on `always()`, and posts a Mattermost summary.
+This repository includes a GitHub Actions workflow for post-build sanity-testing AlmaLinux OS GenericCloud (`.qcow2`) images. Unlike the cloud-API counterparts ([`AZURE_TEST.md`](AZURE_TEST.md), [`OCI_TEST.md`](OCI_TEST.md)) which spawn a VM in the respective cloud, this workflow boots the image **directly under QEMU/KVM on the runner** with a cloud-init seed ISO, runs a small set of release / arch / disk / `dnf` assertions over SSH, shuts the guest down on `always()`, and posts a Mattermost summary.
 
 Both x86_64 and aarch64 images are supported; the matching architecture-specific job is selected from the parsed image filename.
 
@@ -50,12 +50,13 @@ Composite action shared by both arch jobs. Per-arch differences (qemu binary, ma
 6. Build a `seed.iso` cloud-init datasource (meta-data + user-data injecting the public key)
 7. Launch QEMU daemonized with `accel=kvm`, virtio disk/net, SLIRP user-mode networking, and `hostfwd=tcp::2222-:22`
 8. Wait for SSH on `127.0.0.1:2222` by looping `ssh-keyscan` (succeeds only once the guest's sshd is actually responding, not just when QEMU's hostfwd accepts the TCP handshake)
-9. Run the in-VM assertions (see [Test Assertions](#test-assertions)), `scp` the package list back
-10. Upload the package list as a workflow artifact
-11. Dump `console.log` if the job failed (so debugging doesn't need an artifact upload)
-12. Write the Step Summary
-13. Send `SIGTERM` to the QEMU pid (graceful guest powerdown via ACPI), `SIGKILL` after a 15 s grace period
-14. Post the Mattermost notification
+9. Run the in-VM assertions (see [Test Assertions](#test-assertions))
+10. Dump `console.log` if the job failed (so debugging doesn't need an artifact upload)
+11. Write the Step Summary
+12. Send `SIGTERM` to the QEMU pid (graceful guest powerdown via ACPI), `SIGKILL` after a 15 s grace period
+13. Post the Mattermost notification
+
+The installed-packages list is not collected here: the build workflow already stores it as a workflow artifact from its offline (qemu-nbd) test stage.
 
 ## Required GitHub Configuration
 
@@ -139,7 +140,6 @@ Once SSH is reachable on the guest, the following checks run in sequence (failur
 5. **Root filesystem resize** — root must be ≥ 95 GiB (the overlay is 100 GiB; the QEMU image's UEFI layout — 1M BIOS-boot + 200M `/boot/efi` + 1G `/boot` — plus ext4/xfs metadata trims the observed ceiling on a fully-grown root to ~97 GiB)
 6. **Root filesystem type (gencloud_ext4 only)** — `findmnt -no FSTYPE /` must return `ext4`. Skipped for the XFS `gencloud` subtype.
 7. **Updates available** — `sudo dnf check-update` (exit code `100` is treated as success — it just means updates are pending)
-8. **Installed-package list** — `rpm -qa --queryformat '%{NAME}\n' | sort > /tmp/<IMAGE_FILENAME>.txt`, then SCP'd back and uploaded as a workflow artifact
 
 These mirror the assertions [`oci-test.yml`](OCI_TEST.md) and [`azure-test.yml`](AZURE_TEST.md) run, plus two GenericCloud-only checks the cloud-API siblings can't make: the `gencloud_ext4` root-FS-type assertion (Azure / OCI only publish the XFS variant) and the explicit QEMU/KVM package-set check (the cloud-API images have those packages too, but the dependency is most semantically tied to running directly on QEMU/KVM).
 
@@ -161,9 +161,8 @@ graph TD
     O --> SD[Build cloud-init seed.iso]
     SD --> B[Boot QEMU/KVM — daemonized, hostfwd 2222→22]
     B --> W[Wait for SSH on 127.0.0.1:2222]
-    W --> T[Run image tests — release/arch/disk/dnf/packages]
-    T --> U[Upload packages list artifact]
-    U --> SUM[Job summary]
+    W --> T[Run image tests — release/arch/disk/dnf]
+    T --> SUM[Job summary]
     SUM --> SH[Shut down guest — SIGTERM then SIGKILL]
     SH --> N[Send Mattermost notification]
 ```
@@ -172,7 +171,7 @@ graph TD
 
 1. **First dispatch against an x86_64 image:**
    - Copy the `image_url` line from a recent `gencloud-build.yml` Mattermost summary
-   - Confirm green run, package-list artifact, and Mattermost summary
+   - Confirm green run and Mattermost summary
 
 2. **aarch64 dispatch:**
    - Same flow with an aarch64 URL — confirms the `qemu-system-aarch64` + AAVMF path

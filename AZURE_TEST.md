@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository includes a GitHub Actions workflow for post-publish sanity-testing AlmaLinux OS image versions in an Azure Compute Gallery. The workflow launches a fresh VM from a given gallery image version, runs a small set of release / arch / disk / `dnf` assertions over SSH, collects the installed-package list, tears the VM and its auto-created peers down on `always()`, and posts a Mattermost summary.
+This repository includes a GitHub Actions workflow for post-publish sanity-testing AlmaLinux OS image versions in an Azure Compute Gallery. The workflow launches a fresh VM from a given gallery image version, runs a small set of release / arch / disk / `dnf` assertions over SSH, tears the VM and its auto-created peers down on `always()`, and posts a Mattermost summary.
 
 It is the Azure counterpart of [`OCI_TEST.md`](OCI_TEST.md).
 
@@ -17,8 +17,9 @@ Workflow for validating a Compute Gallery image version end-to-end.
 - Resolves the gallery image-version resource ID and source VHD URI via `az sig image-version show`
 - Reverse-engineers the architecture from the source VHD filename using the same regex pair as [`AZURE_GALLERY.md`](AZURE_GALLERY.md) (so any image definition that release publishes is automatically supported)
 - Generates an ephemeral ed25519 SSH keypair, creates a test VM with `az vm create --nsg-rule SSH`, waits for SSH, runs the assertions, then deletes the VM, OS disk, NIC, public IP, and NSG by their auto-generated names
-- Uploads the package list as a workflow artifact
 - Sends a Mattermost notification with portal links to the gallery image and the (now-deleted) test VM
+
+The installed-packages list is not collected here: the build workflow already stores it as a workflow artifact from its offline (qemu-nbd) test stage.
 
 **Usage:**
 ```
@@ -133,7 +134,6 @@ Once SSH is reachable on the VM, the following checks run in sequence (failure o
 4. **Disk and filesystems** — `lsblk` listing
 5. **Root filesystem resize** — root must be ≥ 98 GiB (the OS-disk-size-gb passed to `az vm create` is 100 GiB)
 6. **Updates available** — `sudo dnf check-update` (exit code `100` is treated as success — it just means updates are pending)
-7. **Installed-package list** — `rpm -qa --queryformat '%{NAME}\n' | sort > /tmp/<CUSTOM_IMAGE_NAME>.txt`, then SCP'd back and uploaded as a workflow artifact
 
 ## Workflow Process
 
@@ -148,9 +148,8 @@ graph TD
     K --> C[Launch test VM — az vm create --nsg-rule SSH]
     C --> IP[Resolve VM public IP]
     IP --> W[Wait for SSH — 60 × 10 s nc]
-    W --> T[Run image tests — release/arch/disk/dnf/packages]
-    T --> U[Upload packages list artifact]
-    U --> S[Job summary — portal links]
+    W --> T[Run image tests — release/arch/disk/dnf]
+    T --> S[Job summary — portal links]
     S --> CL[Terminate test VM<br/>VM + OS disk + NIC + Public IP + NSG]
     CL --> N[Send Mattermost notification]
 ```

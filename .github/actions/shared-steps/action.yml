@@ -497,7 +497,12 @@ runs:
     - uses: actions/upload-artifact@v7
       name: Store packages list as artifact
       id: pkglist-artifact
-      if: inputs.store_as_artifact  == 'true' && env.got_pkgs_list == 'true'
+      # The packages list is ~2 KB and always useful (e.g. comparing PUNGI vs
+      # GA image content), so unlike the image/checksum artifacts it is NOT
+      # gated on store_as_artifact - the azure/vagrant unified workflows
+      # hardcode store_as_artifact='false' (input dropped for the 10-input
+      # workflow_dispatch limit) and would otherwise never store it.
+      if: env.got_pkgs_list == 'true'
       with:
         compression-level: 9
         name: ${{ env.IMAGE_NAME }}.txt

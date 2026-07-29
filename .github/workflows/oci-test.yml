@@ -212,23 +212,10 @@ jobs:
           exit "${rc}"
         fi
 
-        PKG_FILE="${CUSTOM_IMAGE_NAME}.txt"
-        "${SSH[@]}" "rpm -qa --queryformat '%{NAME}\n' | sort > /tmp/${PKG_FILE}"
-        scp -i ~/.ssh/oci_test -o StrictHostKeyChecking=accept-new \
-          "${SSH_USER}@${PUBLIC_IP}:/tmp/${PKG_FILE}" "./${PKG_FILE}"
-
         {
-          echo "PKG_FILE=${PKG_FILE}"
           echo "ALMA_RELEASE=${ALMA_RELEASE}"
           echo "SYSTEM_ARCH=${SYSTEM_ARCH}"
         } >> "$GITHUB_ENV"
-
-    - name: Upload packages list artifact
-      if: env.PKG_FILE != ''
-      uses: actions/upload-artifact@v7
-      with:
-        name: ${{ env.PKG_FILE }}
-        path: ./${{ env.PKG_FILE }}
 
     - name: Job summary
       if: always() && env.CUSTOM_IMAGE_NAME != ''

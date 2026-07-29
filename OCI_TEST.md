@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository includes a GitHub Actions workflow for post-publish sanity-testing AlmaLinux OS Compute Custom Images on Oracle Cloud Infrastructure. The workflow launches a fresh test instance from a given Compute Image OCID, runs a small set of release / arch / disk / `dnf` assertions over SSH, collects the installed-package list, terminates the instance on `always()`, and posts a Mattermost summary.
+This repository includes a GitHub Actions workflow for post-publish sanity-testing AlmaLinux OS Compute Custom Images on Oracle Cloud Infrastructure. The workflow launches a fresh test instance from a given Compute Image OCID, runs a small set of release / arch / disk / `dnf` assertions over SSH, terminates the instance on `always()`, and posts a Mattermost summary.
 
 It is the OCI counterpart of [`AZURE_TEST.md`](AZURE_TEST.md).
 
@@ -17,8 +17,9 @@ Workflow for validating an OCI Compute Custom Image end-to-end.
 - Reads the image `display-name` and parses it for AlmaLinux major/version/datestamp/architecture
 - Maps architecture to an OCI shape (`x86_64` → `VM.Standard.E5.Flex`, `aarch64` → `VM.Standard.A1.Flex`)
 - Generates an ephemeral ed25519 SSH keypair, launches a test instance with a public IP, waits for SSH, runs the assertions, then terminates the instance
-- Uploads the package list as a workflow artifact
 - Sends a Mattermost notification with OCI Console links to the image and the (now-terminated) test instance
+
+The installed-packages list is not collected here: the build workflow already stores it as a workflow artifact from its offline (qemu-nbd) test stage.
 
 **Usage:**
 ```
@@ -93,7 +94,6 @@ Once SSH is reachable on the test instance, the following checks run in sequence
 4. **Disk and filesystems** — `lsblk` listing
 5. **Root filesystem resize** — root must be ≥ 98 GiB (the boot-volume-size-in-gbs is 100 GiB)
 6. **Updates available** — `sudo dnf check-update` (exit code `100` is treated as success — it just means updates are pending)
-7. **Installed-package list** — `rpm -qa --queryformat '%{NAME}\n' | sort > /tmp/<CUSTOM_IMAGE_NAME>.txt`, then SCP'd back and uploaded as a workflow artifact
 
 ## Workflow Process
 
@@ -108,9 +108,8 @@ graph TD
     AD --> L[Launch test instance — oci compute instance launch]
     L --> IP[Resolve instance public IP via VNIC]
     IP --> W[Wait for SSH — 60 × 10 s nc]
-    W --> T[Run image tests — release/arch/disk/dnf/packages]
-    T --> U[Upload packages list artifact]
-    U --> S[Job summary — OCI Console links]
+    W --> T[Run image tests — release/arch/disk/dnf]
+    T --> S[Job summary — OCI Console links]
     S --> CL[Terminate test instance — wait for TERMINATED]
     CL --> N[Send Mattermost notification]
 ```
@@ -134,7 +133,7 @@ OCI's `terminate` deletes the instance, the boot volume (because we created it i
 
 1. **First dispatch against an x86_64 image:**
    - Use the OCID of a recently imported AlmaLinux 10 OCI image
-   - Confirm green run, package-list artifact, and Mattermost summary
+   - Confirm green run and Mattermost summary
 
 2. **aarch64 dispatch:**
    - Same flow with an aarch64 OCID — confirms the `VM.Standard.A1.Flex` shape path

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository includes a GitHub Actions workflow for post-build sanity-testing AlmaLinux OS OpenNebula (`.qcow2`) images. Like its [`GENCLOUD_TEST.md`](GENCLOUD_TEST.md) sibling — and unlike the cloud-API counterparts ([`AZURE_TEST.md`](AZURE_TEST.md), [`OCI_TEST.md`](OCI_TEST.md)) which spawn a VM in the respective cloud — this workflow boots the image **directly under QEMU/KVM on the runner**, this time with an **OpenNebula `CONTEXT` ISO** (one-context contextualization, not cloud-init), runs a small set of release / arch / disk / `dnf` assertions plus OpenNebula-specific contextualization assertions over SSH, collects the installed-package list, shuts the guest down on `always()`, and posts a Mattermost summary.
+This repository includes a GitHub Actions workflow for post-build sanity-testing AlmaLinux OS OpenNebula (`.qcow2`) images. Like its [`GENCLOUD_TEST.md`](GENCLOUD_TEST.md) sibling — and unlike the cloud-API counterparts ([`AZURE_TEST.md`](AZURE_TEST.md), [`OCI_TEST.md`](OCI_TEST.md)) which spawn a VM in the respective cloud — this workflow boots the image **directly under QEMU/KVM on the runner**, this time with an **OpenNebula `CONTEXT` ISO** (one-context contextualization, not cloud-init), runs a small set of release / arch / disk / `dnf` assertions plus OpenNebula-specific contextualization assertions over SSH, shuts the guest down on `always()`, and posts a Mattermost summary.
 
 Both x86_64 (including `x86_64_v2`) and aarch64 images are supported; the matching architecture-specific job is selected from the parsed image filename.
 
@@ -50,12 +50,13 @@ Composite action shared by both arch jobs. Per-arch differences (qemu binary, ma
 6. Build a `context.iso` (ISO9660, volume label `CONTEXT`) containing `context.sh` with `SET_HOSTNAME`, `USERNAME`, `SSH_PUBLIC_KEY`, `NETWORK="YES"`, `START_SSHD="YES"`, `ETH0_MAC`, `ETH0_METHOD="dhcp"`, `ETH0_IP6_METHOD="skip"`, `ETH0_DNS="10.0.2.3"`
 7. Launch QEMU daemonized with `accel=kvm`, virtio disk/net (NIC MAC pinned to match `ETH0_MAC`), SLIRP user-mode networking, and `hostfwd=tcp::2222-:22`
 8. Wait for SSH on `127.0.0.1:2222` by looping `ssh-keyscan` (succeeds only once the guest's sshd is actually responding, not just when QEMU's hostfwd accepts the TCP handshake)
-9. Run the in-VM assertions (see [Test Assertions](#test-assertions)), `scp` the package list back
-10. Upload the package list as a workflow artifact
-11. Dump `console.log` if the job failed (so debugging doesn't need an artifact upload)
-12. Write the Step Summary
-13. Send `SIGTERM` to the QEMU pid (graceful guest powerdown via ACPI), `SIGKILL` after a 15 s grace period
-14. Post the Mattermost notification
+9. Run the in-VM assertions (see [Test Assertions](#test-assertions))
+10. Dump `console.log` if the job failed (so debugging doesn't need an artifact upload)
+11. Write the Step Summary
+12. Send `SIGTERM` to the QEMU pid (graceful guest powerdown via ACPI), `SIGKILL` after a 15 s grace period
+13. Post the Mattermost notification
+
+The installed-packages list is not collected here: the build workflow already stores it as a workflow artifact from its offline (qemu-nbd) test stage.
 
 ## Required GitHub Configuration
 
@@ -174,9 +175,8 @@ Once SSH is reachable on the guest, the following checks run in sequence (failur
 9. **`SET_HOSTNAME` applied** — `hostname` returns `opennebula-test`
 10. **`ETH0_METHOD=dhcp` applied** — `ip -4 -o addr show eth0` shows an inet address; `ip route` shows a default route (the symptom from the [`ETH0_MAC` discussion above](#why-eth0_mac-is-required))
 11. **Updates available** — `sudo dnf check-update` (exit code `100` is treated as success — it just means updates are pending)
-12. **Installed-package list** — `rpm -qa --queryformat '%{NAME}\n' | sort > /tmp/<IMAGE_FILENAME>.txt`, then SCP'd back and uploaded as a workflow artifact
 
-Items 1–4 and 11–12 mirror the assertions [`oci-test.yml`](OCI_TEST.md), [`azure-test.yml`](AZURE_TEST.md), and [`gencloud-test.yml`](GENCLOUD_TEST.md) run. Items 5–10 are OpenNebula-specific and protect against regressions in either the image's bundled OpenNebula payload (`one-context` + addons + supporting tools) or the contextualization invocation. The payload list (item 6) is kept in sync with `ansible/roles/opennebula_guest/tasks/main.yml` — when a package is added to or removed from the role, update the test in the same change.
+Items 1–4 and 11 mirror the assertions [`oci-test.yml`](OCI_TEST.md), [`azure-test.yml`](AZURE_TEST.md), and [`gencloud-test.yml`](GENCLOUD_TEST.md) run. Items 5–10 are OpenNebula-specific and protect against regressions in either the image's bundled OpenNebula payload (`one-context` + addons + supporting tools) or the contextualization invocation. The payload list (item 6) is kept in sync with `ansible/roles/opennebula_guest/tasks/main.yml` — when a package is added to or removed from the role, update the test in the same change.
 
 ## Workflow Process
 
@@ -196,9 +196,8 @@ graph TD
     O --> CT[Build context.iso — label CONTEXT, with context.sh]
     CT --> B[Boot QEMU/KVM — daemonized, hostfwd 2222→22, NIC MAC pinned]
     B --> W[Wait for SSH on 127.0.0.1:2222]
-    W --> T[Run image tests — release/arch/disk/one-context/dnf/packages]
-    T --> U[Upload packages list artifact]
-    U --> SUM[Job summary]
+    W --> T[Run image tests — release/arch/disk/one-context/dnf]
+    T --> SUM[Job summary]
     SUM --> SH[Shut down guest — SIGTERM then SIGKILL]
     SH --> N[Send Mattermost notification]
 ```
@@ -207,7 +206,7 @@ graph TD
 
 1. **First dispatch against an x86_64 image:**
    - Copy the `image_url` line from a recent `opennebula-build.yml` Mattermost summary
-   - Confirm green run, package-list artifact, and Mattermost summary
+   - Confirm green run and Mattermost summary
 
 2. **`x86_64_v2` dispatch:**
    - Same flow with an `x86_64_v2` URL — confirms the v2 token is parsed, the test runs on the x86_64 runner, and the summary/Mattermost message reflect `x86_64_v2`

@@ -300,24 +300,11 @@ runs:
           exit "${rc}"
         fi
 
-        PKG_FILE="${IMAGE_FILENAME}.txt"
-        "${SSH[@]}" "rpm -qa --queryformat '%{NAME}\n' | sort > /tmp/${PKG_FILE}"
-        scp -i ~/.ssh/opennebula_test -P 2222 -o StrictHostKeyChecking=accept-new \
-          "almalinux@127.0.0.1:/tmp/${PKG_FILE}" "./${PKG_FILE}"
-
         {
-          echo "PKG_FILE=${PKG_FILE}"
           echo "ALMA_RELEASE=${ALMA_RELEASE}"
           echo "SYSTEM_ARCH=${SYSTEM_ARCH}"
           echo "ONE_CONTEXT_VERSION=${ONE_CONTEXT_VERSION}"
         } >> "$GITHUB_ENV"
-
-    - name: Upload packages list artifact
-      if: env.PKG_FILE != ''
-      uses: actions/upload-artifact@v7
-      with:
-        name: ${{ env.PKG_FILE }}
-        path: ./${{ env.PKG_FILE }}
 
     - name: Show guest console log on failure
       if: failure()
