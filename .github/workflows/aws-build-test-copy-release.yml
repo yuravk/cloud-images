@@ -1,6 +1,6 @@
 name: "AWS: Build, Test, Copy to regions and Release"
 run-name: >-
-  AWS: AlmaLinux ${{ inputs.version_major == 'kitten_10' && 'Kitten 10' || inputs.version_major }} Build, Test, Copy to regions and Release
+  AWS: AlmaLinux ${{ inputs.version_major == 'kitten_10' && 'Kitten 10' || inputs.version_major }} Build, Test${{ inputs.copy_to_regions && ', Copy to regions' || '' }}${{ inputs.copy_to_regions && inputs.release_to_marketplace && ' and Release' || '' }}
 
 # Unified AWS AMI pipeline in a single workflow_dispatch:
 #   1. Build the AMIs with Packer (x86_64 + aarch64).
@@ -15,9 +15,12 @@ run-name: >-
 # per-arch matrix): it merges the x86_64 + aarch64 data into one MD/CSV and
 # opens exactly one PR, so the two arches never race to create conflicting PRs.
 #
+# Stage gating inputs: copy_to_regions=false stops after build+test (the
+# wiki PR and the Marketplace release need the region copies, so both are
+# skipped too); release_to_marketplace=false stops after the copy + wiki PR.
+#
 # Fixed behaviours (inputs omitted from the standalone workflows):
-#   test_ami=true, make_public=true, draft=false, release_to_marketplace=true,
-#   public_product=true
+#   test_ami=true, make_public=true, draft=false, public_product=true
 
 on:
   workflow_dispatch:
@@ -33,6 +36,18 @@ on:
             - 10
             - 9
             - 8
+
+        copy_to_regions:
+          description: "Copy tested AMIs to all AWS regions and make them public (gates the wiki PR and the Marketplace release)"
+          required: true
+          type: boolean
+          default: true
+
+        release_to_marketplace:
+          description: "Release the copied AMIs to their AWS Marketplace products"
+          required: true
+          type: boolean
+          default: true
 
         notify_mattermost:
           description: "Send notification to Mattermost"
@@ -331,7 +346,7 @@ jobs:
     needs: [build-ami, test-ami]
     # Run after a successful build and passing test. Skipped if any test leg
     # failed, so a broken AMI is never copied/made public.
-    if: ${{ !cancelled() && needs.build-ami.result == 'success' && needs.test-ami.result == 'success' }}
+    if: ${{ !cancelled() && inputs.copy_to_regions && needs.build-ami.result == 'success' && needs.test-ami.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -562,7 +577,7 @@ jobs:
     # Release each built AMI to its arch-specific Marketplace product after the
     # build/test/copy stages succeed. x86_64 and aarch64 target different
     # products, so the matrix legs run in parallel without conflict.
-    if: ${{ !cancelled() && needs.build-ami.result == 'success' && needs.test-ami.result == 'success' && needs.copy-ami.result == 'success' }}
+    if: ${{ !cancelled() && inputs.release_to_marketplace && needs.build-ami.result == 'success' && needs.test-ami.result == 'success' && needs.copy-ami.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
