@@ -564,6 +564,13 @@ runs:
         # almalinux-hpc) do not — adding unsupported properties causes a
         # schema validation error.  Only set properties that already exist
         # in the tech config.
+        #
+        # vmProperties.virtualizationType is deleted: the resource tree
+        # returns it (as the literal string "undefined"), but the configure
+        # endpoint's technical-configuration schema (2022-03-01-preview6)
+        # rejects the property outright — echoing it back fails with
+        # 'All values fail against the false schema
+        # #/vmProperties/virtualizationType'.
         jq --arg offer "${OFFER}" \
           --arg plan "${PLAN}" \
           --argjson versions "${ALL_VERSIONS}" \
@@ -571,6 +578,7 @@ runs:
             "$schema": "https://schema.mp.microsoft.com/schema/configure/2022-03-01-preview2",
             "resources": [
               (. | del(.id)
+                 | del(.vmProperties.virtualizationType)
                  | .product = { "externalId": $offer }
                  | .plan    = { "externalId": $plan }
                  | .vmImageVersions = $versions
