@@ -168,7 +168,7 @@ jobs:
     name: Test ${{ inputs.version_major }} ${{ matrix.arch }} AMI
     if: inputs.test_ami
     needs: [build-ami]
-    runs-on: ${{ format('runs-on={0}/family={1}/ami={2}/region={3}', github.run_id, contains(matrix.arch, 'aarch64') && 't4g.medium' || 't3.medium', contains(matrix.arch, 'aarch64') && needs.build-ami.outputs.ami_aarch64 || needs.build-ami.outputs.ami_x86_64, vars.AWS_REGION )}}
+    runs-on: ${{ format('runs-on={0}/family={1}/ami={2}/region={3}/spot=false', github.run_id, contains(matrix.arch, 'aarch64') && 't4g.medium' || 't3.medium', contains(matrix.arch, 'aarch64') && needs.build-ami.outputs.ami_aarch64 || needs.build-ami.outputs.ami_x86_64, vars.AWS_REGION )}}
     strategy:
       fail-fast: false
       matrix:

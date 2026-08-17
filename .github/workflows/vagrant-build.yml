@@ -157,7 +157,7 @@ jobs:
     runs-on: >-
       ${{
         github.repository_owner == 'AlmaLinux' &&
-          format('runs-on={0}/family=r8i.2xlarge/image=ubuntu24-full-x64/volume=60g/nested-virt', github.run_id)
+          format('runs-on={0}/family=r8i.2xlarge/image=ubuntu24-full-x64/volume=60g/nested-virt/spot=false', github.run_id)
         ||
         'ubuntu-24.04'
       }}
@@ -255,7 +255,7 @@ jobs:
     runs-on: >-
       ${{
         github.repository_owner == 'AlmaLinux' &&
-          format('runs-on={0}/family=r8i.2xlarge/ami={1}/volume=60g/nested-virt', github.run_id, vars.EC2_AMI_ID_AL9_X86_64)
+          format('runs-on={0}/family=r8i.2xlarge/ami={1}/volume=60g/nested-virt/spot=false', github.run_id, vars.EC2_AMI_ID_AL9_X86_64)
         ||
         inputs.self_hosted_runner == 'aws-ec2' && github.run_id
         ||
