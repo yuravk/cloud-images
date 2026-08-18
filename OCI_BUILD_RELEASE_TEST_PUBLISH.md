@@ -65,31 +65,35 @@ a failed sibling test does not block the images that passed.
 
 ## Job layout
 
+The pipeline is two **independent per-image chains** (no aggregate
+"collect" stages):
+
 ```
 init-data
- |- build-gh-hosted (x86_64)            -. shared-steps build, then
- |- start-self-hosted-runner (fork EC2)  | oci-compute-image-steps (in-job)
- '- build-self-hosted (aarch64)         -' -> oci-manifest-<arch>.json artifact
-        |
- collect-images        merge manifests -> test_matrix (one OCID/image)
-        |
- test-image            matrix -> oci-test-steps; passing legs re-upload the
-        |              manifest as oci-test-passed-<arch>.json
- collect-passed        merge passed records -> publish_matrix
-        |
- publish-image         matrix (parallel) -> oci-marketplace-steps
-        |
- pipeline-summary      stage/result table
+ |- build-x86_64  -> test-x86_64  -> publish-x86_64
+ |- start-self-hosted-runner (fork EC2 runner)
+ '- build-aarch64 -> test-aarch64 -> publish-aarch64
 ```
 
-Matrix-job outputs collapse (last writer wins), so per-image data flows
-between stages through **artifacts**, not job outputs:
+Each build job runs shared-steps, then oci-compute-image-steps in-job,
+which uploads an `oci-manifest-<arch>.json` artifact (Compute Image OCID,
+custom image name, Object Storage path, and the parsed AlmaLinux
+major / version / date / release / code-name / display-arch). The image's
+test job downloads that manifest and exposes its fields as job outputs;
+the matching publish job is gated on its own test's success and takes
+everything the Marketplace stage needs from those outputs.
 
-- `oci-manifest-<arch>.json` - compute-image results: Compute Image OCID,
-  custom image name, Object Storage path, and the parsed AlmaLinux
-  major / version / date / release / code-name / display-arch.
-- `oci-test-passed-<arch>.json` - the same manifest, re-uploaded only by a
-  passing test leg; the publish matrix is built from these.
+Why per-image chains: with aggregate collect stages in the middle,
+"Re-run failed jobs" on one image's failed build or test re-ran the
+collectors and therefore **every** image's test and publish — re-testing
+and re-publishing the sibling image that had already gone out. With
+per-image chains, a re-run walks only the failed image's own downstream
+jobs; the manifest artifact survives re-run attempts, so a re-run test
+needs no re-build.
+
+The two publish jobs run in parallel: each arch has its own Marketplace
+listing ("AlmaLinux OS <major> (<arch>)"), so draft revisions never
+collide.
 
 ### Stage composite actions
 
@@ -111,8 +115,8 @@ compatibility steps and runs them on the local `.qcow2`.
 
 | Job | Runner | Notes |
 | :--- | :--- | :--- |
-| `build-gh-hosted` | `c7i.metal-24xl+c7a.metal-48xl+*8gd.metal*`, `image=ubuntu24-full-x64` | x86_64 Packer build + compute-image import. |
-| `build-self-hosted` | `a1.metal`, `image=almalinux-9-aarch64`, `volume=40g` (org) / `ec2_root_disk_size_gb: 16` (fork) | aarch64. |
+| `build-x86_64` | `c7i.metal-24xl+c7a.metal-48xl+*8gd.metal*`, `image=ubuntu24-full-x64` | x86_64 Packer build + compute-image import. |
+| `build-aarch64` | `a1.metal`, `image=almalinux-9-aarch64`, `volume=40g` (org) / `ec2_root_disk_size_gb: 16` (fork) | aarch64. |
 
 The OCI compute-image stage **uploads** the qcow2 to Object Storage and
 imports it server-side, so unlike the Azure gallery stage it does not

@@ -8,6 +8,22 @@ run-name: >-
 # round-trip), boot-test every Compute Image, and publish every image that
 # passed its test to the Oracle Cloud Marketplace as a draft revision.
 #
+# The pipeline is two INDEPENDENT per-image chains
+#
+#   build-x86_64  -> test-x86_64  -> publish-x86_64
+#   build-aarch64 -> test-aarch64 -> publish-aarch64
+#
+# rather than build-matrix -> collect -> test-matrix -> collect -> publish:
+# with per-image chains, "Re-run failed jobs" re-runs ONLY the failed
+# image's own downstream jobs - a sibling image that already tested and
+# published is not re-tested and, above all, not re-published. Each build
+# leg's compute-image stage uploads an oci-manifest-<arch>.json artifact;
+# the image's test job downloads it (artifacts survive re-run attempts, so
+# a re-run test needs no re-build) and exposes its fields as job outputs
+# for the publish job. The two publishes run in parallel: each arch has
+# its own Marketplace listing ("AlmaLinux OS <major> (<arch>)"), so draft
+# revisions never collide.
+#
 # Stage gating:
 #   create_compute_image=false   -> build-only run (compute-image / test / publish skip)
 #   release_to_marketplace=false -> build + compute-image + test (publish skips)
@@ -103,8 +119,8 @@ jobs:
           date_stamp=${date_time_stamp:0:-6}
           echo "date_stamp=${date_stamp}" >> "$GITHUB_OUTPUT"
 
-  build-gh-hosted:
-    name: ${{ inputs.version_major }} oci-x86_64 image
+  build-x86_64:
+    name: Build and release x86_64
     permissions:
       id-token: write
       contents: read
@@ -166,7 +182,7 @@ jobs:
   # The job is to start self-hosted runner on AWS EC2 instance if not in the almalinux org
   # It does nothing if in the almalinux org, so 'Setup and start runner' step is skipped
   start-self-hosted-runner:
-    name: ${{ inputs.version_major }} oci-aarch64 runner
+    name: Start self-hosted runner
     if: ${{ inputs.self-hosted }}
     runs-on: ubuntu-24.04
     needs: [init-data]
@@ -195,8 +211,8 @@ jobs:
             {"Key": "Project", "Value": "GitHub Actions Self-hosted Runners"}
           ]
 
-  build-self-hosted:
-    name: ${{ inputs.version_major }} oci-aarch64 image
+  build-aarch64:
+    name: Build and release aarch64
     permissions:
       id-token: write
       contents: read
@@ -258,77 +274,56 @@ jobs:
           MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
           MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
 
-  # Aggregate the per-image manifests the compute-image stage produced.
-  # Matrix-job outputs collapse (last writer wins), so each build leg uploads
-  # an oci-manifest-<arch>.json artifact instead, and this job merges them
-  # into the minimal JSON matrix the test stage fans out over (the full
-  # manifest is carried forward as the passed-test artifact).
-  collect-images:
-    name: Collect Compute Images
-    runs-on: ubuntu-24.04
-    needs: [build-gh-hosted, build-self-hosted]
-    # !cancelled(): aggregate whatever succeeded even when a sibling build
-    # leg failed or the aarch64 jobs were skipped (self-hosted=false).
-    if: ${{ !cancelled() && inputs.create_compute_image }}
-    outputs:
-      test_matrix: ${{ steps.aggregate.outputs.test_matrix }}
-      test_count: ${{ steps.aggregate.outputs.test_count }}
-    steps:
-      - name: Download compute-image manifests
-        uses: actions/download-artifact@v7
-        continue-on-error: true
-        with:
-          pattern: oci-manifest-*
-          merge-multiple: true
-          path: manifests
-
-      - name: Aggregate manifests
-        id: aggregate
-        run: |
-          # Aggregate manifests
-          mkdir -p manifests
-          shopt -s nullglob
-          files=(manifests/*.json)
-
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "[Warning] No compute-image manifests found - nothing to test or publish."
-            echo "test_matrix=[]" >> "$GITHUB_OUTPUT"
-            echo "test_count=0" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Minimal matrix: just what the test stage needs to launch + name.
-          # The full manifest is re-uploaded as the passed-test record.
-          test_matrix=$(jq -s -c \
-            '[ .[] | {image_key, compute_image_ocid} ]' \
-            "${files[@]}")
-
-          echo "[Debug] test matrix:"
-          echo "${test_matrix}" | jq '.'
-
-          echo "test_matrix=${test_matrix}" >> "$GITHUB_OUTPUT"
-          echo "test_count=$(echo "${test_matrix}" | jq 'length')" >> "$GITHUB_OUTPUT"
-
-  test-image:
-    name: Test ${{ matrix.image_key }} image
+  # Per-image test jobs. Each downloads its build leg's compute-image
+  # manifest artifact (artifacts survive "Re-run failed jobs", so a re-run
+  # test needs no re-build) and exposes the manifest fields as job outputs
+  # for the matching publish job.
+  test-x86_64:
+    name: Test x86_64
     permissions:
       id-token: write
       contents: read
     runs-on: ubuntu-24.04
-    needs: [collect-images]
-    if: ${{ !cancelled() && needs.collect-images.result == 'success' && fromJSON(needs.collect-images.outputs.test_count) > 0 }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.collect-images.outputs.test_matrix) }}
+    needs: [build-x86_64]
+    if: ${{ inputs.create_compute_image }}
+    outputs:
+      compute_image_ocid: ${{ steps.manifest.outputs.compute_image_ocid }}
+      custom_image_name: ${{ steps.manifest.outputs.custom_image_name }}
+      object_name: ${{ steps.manifest.outputs.object_name }}
+      alma_major: ${{ steps.manifest.outputs.alma_major }}
+      alma_version: ${{ steps.manifest.outputs.alma_version }}
+      alma_date: ${{ steps.manifest.outputs.alma_date }}
+      alma_release: ${{ steps.manifest.outputs.alma_release }}
+      alma_code_name: ${{ steps.manifest.outputs.alma_code_name }}
+      arch: ${{ steps.manifest.outputs.arch }}
+      display_arch: ${{ steps.manifest.outputs.display_arch }}
+      image_display_name: ${{ steps.manifest.outputs.image_display_name }}
     steps:
       - name: Checkout ${{ github.action_repository }}
         uses: actions/checkout@v6
 
-      - uses: ./.github/actions/oci-test-steps
-        name: Test ${{ matrix.compute_image_ocid }}
+      - name: Download compute-image manifest
+        uses: actions/download-artifact@v7
         with:
-          image_ocid: ${{ matrix.compute_image_ocid }}
+          name: oci-manifest-x86_64.json
+          path: manifest
+
+      - name: Read compute-image manifest
+        id: manifest
+        run: |
+          # Read compute-image manifest
+          f=$(ls manifest/oci-manifest-*.json)
+          jq '.' "${f}"
+          for key in compute_image_ocid custom_image_name object_name \
+                     alma_major alma_version alma_date alma_release \
+                     alma_code_name arch display_arch image_display_name; do
+            echo "${key}=$(jq -r ".${key}" "${f}")" >> "$GITHUB_OUTPUT"
+          done
+
+      - uses: ./.github/actions/oci-test-steps
+        name: Test ${{ steps.manifest.outputs.compute_image_ocid }}
+        with:
+          image_ocid: ${{ steps.manifest.outputs.compute_image_ocid }}
           notify_mattermost: ${{ inputs.notify_mattermost }}
           OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
           OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
@@ -340,104 +335,93 @@ jobs:
           MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
           MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
 
-      # Default `if: success()` - this runs only when the test leg passed,
-      # which is what gates this image into the publish stage. Carry the full
-      # manifest forward unchanged as the passed-test record.
-      - name: Fetch manifest for passed image
-        uses: actions/download-artifact@v7
-        with:
-          name: oci-manifest-${{ matrix.image_key }}.json
-          path: passed
-
-      - name: Record passed test
-        run: |
-          # Record passed test (full manifest, renamed for the publish stage)
-          cp "passed/oci-manifest-${{ matrix.image_key }}.json" \
-             "oci-test-passed-${{ matrix.image_key }}.json"
-          cat "oci-test-passed-${{ matrix.image_key }}.json"
-
-      - name: Store passed-test record as artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: oci-test-passed-${{ matrix.image_key }}
-          path: oci-test-passed-${{ matrix.image_key }}.json
-          if-no-files-found: error
-
-  # Build the publish matrix from the per-image passed-test records: publish
-  # every image that passed its test, even when a sibling image's test failed.
-  collect-passed:
-    name: Collect passed images
-    runs-on: ubuntu-24.04
-    needs: [test-image]
-    if: ${{ !cancelled() && inputs.release_to_marketplace && needs.test-image.result != 'skipped' }}
-    outputs:
-      publish_matrix: ${{ steps.aggregate.outputs.publish_matrix }}
-      publish_count: ${{ steps.aggregate.outputs.publish_count }}
-    steps:
-      - name: Download passed-test records
-        uses: actions/download-artifact@v7
-        continue-on-error: true
-        with:
-          pattern: oci-test-passed-*
-          merge-multiple: true
-          path: passed
-
-      - name: Aggregate passed-test records
-        id: aggregate
-        run: |
-          # Aggregate passed-test records
-          mkdir -p passed
-          shopt -s nullglob
-          files=(passed/*.json)
-
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "[Warning] No image passed its test - nothing to publish."
-            echo "publish_matrix=[]" >> "$GITHUB_OUTPUT"
-            echo "publish_count=0" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # The full manifest carries every field the marketplace stage needs.
-          publish_matrix=$(jq -s -c '.' "${files[@]}")
-
-          echo "[Debug] publish matrix:"
-          echo "${publish_matrix}" | jq '.'
-
-          echo "publish_matrix=${publish_matrix}" >> "$GITHUB_OUTPUT"
-          echo "publish_count=$(echo "${publish_matrix}" | jq 'length')" >> "$GITHUB_OUTPUT"
-
-  publish-image:
-    name: Publish ${{ matrix.image_key }} image
+  test-aarch64:
+    name: Test aarch64
     permissions:
       id-token: write
       contents: read
     runs-on: ubuntu-24.04
-    needs: [collect-passed]
-    if: ${{ !cancelled() && needs.collect-passed.result == 'success' && fromJSON(needs.collect-passed.outputs.publish_count) > 0 }}
-    strategy:
-      fail-fast: false
-      # Parallel: each arch publishes to its own listing
-      # ("AlmaLinux OS <major> (<arch>)"), so draft revisions never collide.
-      matrix:
-        include: ${{ fromJSON(needs.collect-passed.outputs.publish_matrix) }}
+    needs: [build-aarch64]
+    if: ${{ inputs.create_compute_image }}
+    outputs:
+      compute_image_ocid: ${{ steps.manifest.outputs.compute_image_ocid }}
+      custom_image_name: ${{ steps.manifest.outputs.custom_image_name }}
+      object_name: ${{ steps.manifest.outputs.object_name }}
+      alma_major: ${{ steps.manifest.outputs.alma_major }}
+      alma_version: ${{ steps.manifest.outputs.alma_version }}
+      alma_date: ${{ steps.manifest.outputs.alma_date }}
+      alma_release: ${{ steps.manifest.outputs.alma_release }}
+      alma_code_name: ${{ steps.manifest.outputs.alma_code_name }}
+      arch: ${{ steps.manifest.outputs.arch }}
+      display_arch: ${{ steps.manifest.outputs.display_arch }}
+      image_display_name: ${{ steps.manifest.outputs.image_display_name }}
+    steps:
+      - name: Checkout ${{ github.action_repository }}
+        uses: actions/checkout@v6
+
+      - name: Download compute-image manifest
+        uses: actions/download-artifact@v7
+        with:
+          name: oci-manifest-aarch64.json
+          path: manifest
+
+      - name: Read compute-image manifest
+        id: manifest
+        run: |
+          # Read compute-image manifest
+          f=$(ls manifest/oci-manifest-*.json)
+          jq '.' "${f}"
+          for key in compute_image_ocid custom_image_name object_name \
+                     alma_major alma_version alma_date alma_release \
+                     alma_code_name arch display_arch image_display_name; do
+            echo "${key}=$(jq -r ".${key}" "${f}")" >> "$GITHUB_OUTPUT"
+          done
+
+      - uses: ./.github/actions/oci-test-steps
+        name: Test ${{ steps.manifest.outputs.compute_image_ocid }}
+        with:
+          image_ocid: ${{ steps.manifest.outputs.compute_image_ocid }}
+          notify_mattermost: ${{ inputs.notify_mattermost }}
+          OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          OCI_CLI_REGION: ${{ vars.OCI_CLI_REGION }}
+          OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
+          OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+          MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
+
+  # Per-image publish jobs: each is gated on its OWN image's test succeeding.
+  # The two publishes run in parallel - each arch has its own Marketplace
+  # listing ("AlmaLinux OS <major> (<arch>)"), so draft revisions never
+  # collide.
+  publish-x86_64:
+    name: Publish to marketplace x86_64
+    permissions:
+      id-token: write
+      contents: read
+    runs-on: ubuntu-24.04
+    needs: [test-x86_64]
+    if: ${{ inputs.release_to_marketplace }}
     steps:
       - name: Checkout ${{ github.action_repository }}
         uses: actions/checkout@v6
 
       - uses: ./.github/actions/oci-marketplace-steps
-        name: Publish ${{ matrix.custom_image_name }} to Marketplace
+        name: Publish ${{ needs.test-x86_64.outputs.custom_image_name }} to Marketplace
         with:
-          compute_image_ocid: ${{ matrix.compute_image_ocid }}
-          custom_image_name: ${{ matrix.custom_image_name }}
-          object_name: ${{ matrix.object_name }}
-          alma_major: ${{ matrix.alma_major }}
-          alma_version: ${{ matrix.alma_version }}
-          alma_date: ${{ matrix.alma_date }}
-          alma_release: ${{ matrix.alma_release }}
-          alma_code_name: ${{ matrix.alma_code_name }}
-          alma_arch: ${{ matrix.arch }}
-          display_arch: ${{ matrix.display_arch }}
-          image_display_name: ${{ matrix.image_display_name }}
+          compute_image_ocid: ${{ needs.test-x86_64.outputs.compute_image_ocid }}
+          custom_image_name: ${{ needs.test-x86_64.outputs.custom_image_name }}
+          object_name: ${{ needs.test-x86_64.outputs.object_name }}
+          alma_major: ${{ needs.test-x86_64.outputs.alma_major }}
+          alma_version: ${{ needs.test-x86_64.outputs.alma_version }}
+          alma_date: ${{ needs.test-x86_64.outputs.alma_date }}
+          alma_release: ${{ needs.test-x86_64.outputs.alma_release }}
+          alma_code_name: ${{ needs.test-x86_64.outputs.alma_code_name }}
+          alma_arch: ${{ needs.test-x86_64.outputs.arch }}
+          display_arch: ${{ needs.test-x86_64.outputs.display_arch }}
+          image_display_name: ${{ needs.test-x86_64.outputs.image_display_name }}
           notify_mattermost: ${{ inputs.notify_mattermost }}
           OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
           OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
@@ -448,23 +432,38 @@ jobs:
           MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
           MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
 
-  pipeline-summary:
-    name: Pipeline summary
+  publish-aarch64:
+    name: Publish to marketplace aarch64
+    permissions:
+      id-token: write
+      contents: read
     runs-on: ubuntu-24.04
-    needs: [build-gh-hosted, build-self-hosted, collect-images, test-image, collect-passed, publish-image]
-    if: ${{ !cancelled() }}
+    needs: [test-aarch64]
+    if: ${{ inputs.release_to_marketplace }}
     steps:
-      - name: Print pipeline summary
-        run: |
-          # Print pipeline summary
-          {
-            echo "## OCI: Build, Release to Compute, Test, Publish to Listings"
-            echo ""
-            echo "| Stage | Result |"
-            echo "|---|---|"
-            echo "| Build x86_64 | ${{ needs.build-gh-hosted.result }} |"
-            echo "| Build aarch64 | ${{ needs.build-self-hosted.result }} |"
-            echo "| Create Compute Image | ${{ inputs.create_compute_image && needs.collect-images.result || 'disabled' }} |"
-            echo "| Test (${{ needs.collect-images.outputs.test_count || 0 }} image(s)) | ${{ needs.test-image.result }} |"
-            echo "| Publish to Marketplace (${{ needs.collect-passed.outputs.publish_count || 0 }} image(s)) | ${{ inputs.release_to_marketplace && needs.publish-image.result || 'disabled' }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Checkout ${{ github.action_repository }}
+        uses: actions/checkout@v6
+
+      - uses: ./.github/actions/oci-marketplace-steps
+        name: Publish ${{ needs.test-aarch64.outputs.custom_image_name }} to Marketplace
+        with:
+          compute_image_ocid: ${{ needs.test-aarch64.outputs.compute_image_ocid }}
+          custom_image_name: ${{ needs.test-aarch64.outputs.custom_image_name }}
+          object_name: ${{ needs.test-aarch64.outputs.object_name }}
+          alma_major: ${{ needs.test-aarch64.outputs.alma_major }}
+          alma_version: ${{ needs.test-aarch64.outputs.alma_version }}
+          alma_date: ${{ needs.test-aarch64.outputs.alma_date }}
+          alma_release: ${{ needs.test-aarch64.outputs.alma_release }}
+          alma_code_name: ${{ needs.test-aarch64.outputs.alma_code_name }}
+          alma_arch: ${{ needs.test-aarch64.outputs.arch }}
+          display_arch: ${{ needs.test-aarch64.outputs.display_arch }}
+          image_display_name: ${{ needs.test-aarch64.outputs.image_display_name }}
+          notify_mattermost: ${{ inputs.notify_mattermost }}
+          OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          OCI_CLI_REGION: ${{ vars.OCI_CLI_REGION }}
+          OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+          MATTERMOST_CHANNEL: ${{ vars.MATTERMOST_CHANNEL }}
