@@ -66,31 +66,38 @@ their test — a failed sibling test does not block the images that passed.
 
 ## Job layout
 
+The pipeline is three **independent per-image chains** (no aggregate
+"collect" stages):
+
 ```
 init-data
- ├─ build-gh-hosted (x86_64)            ┐ shared-steps build, then
- ├─ start-self-hosted-runner (fork EC2) │ azure-gallery-steps (in-job)
- └─ build-self-hosted (aarch64 matrix)  ┘ → azure-manifest-<key>.json artifact
-        │
- collect-images        merge manifests → test_matrix (one gen2 path/image)
-        │
- test-image            matrix → azure-test-steps; passing legs upload
-        │              azure-test-passed-<key>.json
- collect-passed        merge passed records → publish_matrix
-        │
- publish-image         matrix, max-parallel: 1 → azure-marketplace-steps
-        │
- pipeline-summary      stage/result table
+ ├─ build-x86_64      → test-x86_64      → publish-x86_64
+ ├─ start-self-hosted-runner (fork EC2 runners, variant matrix)
+ ├─ build-aarch64     → test-aarch64     → publish-aarch64
+ └─ build-aarch64-64k → test-aarch64-64k → publish-aarch64-64k
+        (9 / 10 / Kitten only)
 ```
 
-Matrix-job outputs collapse (last writer wins), so per-image data flows
-between stages through **artifacts**, not job outputs:
+Each build job runs shared-steps, then azure-gallery-steps in-job, which
+uploads an `azure-manifest-<variant>-<arch>.json` artifact (VHD blob URL,
+created gallery paths, the gen2 test path, and a `marketplace_eligible`
+flag). The image's test job downloads that manifest and exposes its
+fields as job outputs; the matching publish job is gated on its own
+test's success and the `marketplace_eligible` flag.
 
-- `azure-manifest-<variant>-<arch>.json` — gallery results: VHD blob URL,
-  the created gallery paths, the gen2 test path, and a
-  `marketplace_eligible` flag.
-- `azure-test-passed-<variant>-<arch>.json` — written only by a passing
-  test leg; the publish matrix is built from these.
+Why per-image chains: with aggregate collect stages in the middle,
+"Re-run failed jobs" on one image's failed build or test re-ran the
+collectors and therefore **every** image's test and publish — re-testing
+and re-publishing sibling images that had already gone out. With
+per-image chains, a re-run walks only the failed image's own downstream
+jobs; the manifest artifact survives re-run attempts, so a re-run test
+needs no re-build.
+
+The aarch64 and aarch64-64k images share the `almalinux-arm` Marketplace
+offer, and parallel Product Ingestion configure calls collide on the
+offer's draft revision — their publish jobs are serialised through a
+run-scoped `concurrency` group (two jobs at most: one runs, one queues).
+The x86_64 publish targets its own offer and runs in parallel.
 
 ### Stage composite actions
 
@@ -110,8 +117,8 @@ is new — it wraps `tools/azure_uploader.sh` and runs it on the local `.raw`.
 
 | Job | Runner | Notes |
 | :--- | :--- | :--- |
-| `build-gh-hosted` | `r8i.2xlarge` + `nested-virt`, `volume=80g` | x86_64 Packer build + VHD conversion. |
-| `build-self-hosted` | `a1.metal`, `volume=80g` (org) / `ec2_root_disk_size_gb: 80` (fork) | aarch64. |
+| `build-x86_64` | `r8i.2xlarge` + `nested-virt`, `volume=80g` | x86_64 Packer build + VHD conversion. |
+| `build-aarch64` / `build-aarch64-64k` | `a1.metal`, `volume=80g` (org) / `ec2_root_disk_size_gb: 80` (fork) | aarch64. |
 
 `volume=80g` (vs `40g` for `azure-build.yml`) leaves headroom: the
 gallery stage converts the ~30 GB `.raw` to a fixed VHD on the same
@@ -126,12 +133,13 @@ crashes).
 
 ## Marketplace specifics
 
-- **Serialised** (`max-parallel: 1`): aarch64 and aarch64-64k share the
-  `almalinux-arm` offer, and parallel Product Ingestion `configure` calls
-  collide on the offer's draft revision.
+- **Serialised** (run-scoped `concurrency` group on the two arm publish
+  jobs): aarch64 and aarch64-64k share the `almalinux-arm` offer, and
+  parallel Product Ingestion `configure` calls collide on the offer's
+  draft revision.
 - **Kitten aarch64-64k is excluded** from publishing — it has no
   Marketplace plan. The gallery stage flags it `marketplace_eligible:
-  false` and `collect-passed` drops it.
+  false` and `publish-aarch64-64k` skips on that flag.
 - Publishing to **Live is always manual** in Partner Center, even after a
   successful Preview submission. See
   [AZURE_MARKETPLACE.md](AZURE_MARKETPLACE.md) for the offer/plan map and
