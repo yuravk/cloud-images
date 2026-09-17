@@ -315,7 +315,18 @@ runs:
       run: |
         # Build ${{ inputs.type }} image
         # PACKER_LOG=1
+        if [ "${{ inputs.arch }}" = "s390x" ]; then
+          # A communicator-less TCG build prints nothing after "Waiting for
+          # shutdown..." for hours. Stream the guest's SCLP console (anaconda
+          # progress) into the job log so a stuck install is visible live.
+          boot_dir=$(echo 'var.s390x_boot_dir' | sudo /usr/bin/packer console .)
+          sudo touch "${boot_dir}/console.log"
+          sudo tail -n +1 -F "${boot_dir}/console.log" | sed -u 's/^/[s390x console] /' &
+          console_tail=$!
+        fi
         sudo sh -c "/usr/bin/packer build ${{ env.PACKER_OPTS }} -only=${{ env.packer_source }} ."
+        [ -n "${console_tail:-}" ] && { sleep 2; kill "${console_tail}" 2>/dev/null || true; }
+        true
 
     - name: Show the s390x installer console
       if: failure() && inputs.arch == 's390x'
