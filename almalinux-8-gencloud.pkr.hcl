@@ -104,6 +104,11 @@ source "qemu" "almalinux-8-gencloud-ppc64le" {
 # communicator "none" and the 'except' on the provisioner below) and ends
 # with 'reboot'; -no-reboot turns that reboot into a QEMU exit, which is
 # what a communicator-less build waits for (up to shutdown_timeout). The
+# kernel line deliberately has NO cio_ignore=all,!condev (the ISO's
+# generic.prm carries it for LPAR/z/VM installs): in a QEMU guest the
+# virtio NIC and disk are CCW devices too and would be ignored, leaving the
+# installer with no network to fetch the kickstart and no disk to install
+# on - it then waits forever with an idle CPU. The
 # target disk is a blank qcow2 pre-created by shared-steps and grown to
 # disk_size (disk_image = true): no boot ISO is attached, because
 # s390-ccw-virtio has no IDE bus for Packer's default CD-ROM. The SCLP
@@ -135,7 +140,7 @@ source "qemu" "almalinux-8-gencloud-s390x" {
     ["-cpu", "max"],
     ["-kernel", "${var.s390x_boot_dir}/kernel.img"],
     ["-initrd", "${var.s390x_boot_dir}/initrd.img"],
-    ["-append", "ro ramdisk_size=40000 cio_ignore=all,!condev console=ttysclp0 ip=dhcp inst.text inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/almalinux-8.gencloud-s390x.ks"],
+    ["-append", "ro ramdisk_size=40000 console=ttysclp0 ip=dhcp inst.text inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/almalinux-8.gencloud-s390x.ks"],
     ["-serial", "file:${var.s390x_boot_dir}/console.log"],
     ["-no-reboot"],
   ]
