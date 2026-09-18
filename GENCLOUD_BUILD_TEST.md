@@ -127,8 +127,8 @@ to emulation through variables that shared-steps passes on the command line:
 | `ppc64le_cpu_model` | empty (QEMU default = host CPU) | `POWER9` (EL10 baseline; fully implemented by TCG) |
 | `ppc64le_console_log` | empty | `<workspace>/ppc64le-console.log`, streamed into the job log as `[ppc64le console]` lines |
 | `ppc64le_extra_kernel_args` | empty | `console=hvc0`, typed at the end of the GRUB boot command. SLOF makes the VGA display the primary console when a VGA adapter exists (Packer needs one for the VNC keyboard), so without it anaconda draws its text UI on the uncaptured VGA console and hvc0 only shows a shell banner |
-| `ppc64le_manual_boot` | `false` | `true`: QEMU gets `-prom-env auto-boot?=false` so SLOF stops at the Open Firmware prompt, and the boot command starts with `boot cdrom` followed by 15 s of once-a-second keypresses GRUB ignores. The ISO's GRUB menu auto-boots after only 5 s and SLOF's speed under emulation varies, so typing at a fixed delay is a race (the first run lost it and installed without the kickstart); the keypresses stop the countdown as soon as the menu is up. The prefix then moves up from the ISO's default entry ("Test this media & install", whose `rd.live.check` hashes the 1.5 GB ISO for the better part of an hour under emulation) to the plain "Install" entry before the usual edit sequence runs |
-| `gencloud_boot_wait_ppc64le` | `8s` | `60s` (time for SLOF to reach its prompt; it then waits indefinitely) |
+| `ppc64le_grub_hold` | `false` | `true`: the boot command starts with 30 s of once-a-second keypresses GRUB's menu ignores, then moves up from the ISO's default entry ("Test this media & install", whose `rd.live.check` hashes the 1.5 GB ISO for the better part of an hour under emulation) to the plain "Install" entry before the usual edit sequence. The ISO's GRUB menu auto-boots after only 5 s and appears about 8 s after the VM starts, so typing at one fixed delay is a race (the first runs lost it and installed without the kickstart); the presses stop the countdown as soon as the menu is up. SLOF keeps auto-booting, so the reboot after the install comes up on its own |
+| `gencloud_boot_wait_ppc64le` | `8s` | `3s` (start the keypress hold before GRUB can appear) |
 | `ssh_timeout` | `3600s` | `4h` (the whole emulated install runs before SSH is up) |
 
 The emulator is **not** Ubuntu 24.04's QEMU 8.2.2: under TCG it miscompiles
@@ -155,9 +155,9 @@ What the job does and does not do:
 Tuning notes: SLOF and GRUB draw on the VGA console, so the captured
 console shows neither; the kernel's `Command line:` line is the first proof
 that the typed arguments (`inst.ks=...`, `console=hvc0`) arrived. If it
-lacks them, GRUB booted its default entry: check that SLOF reached its
-prompt within `gencloud_boot_wait_ppc64le` and that GRUB came up within the
-15 s keypress window. If the guest dies with an illegal instruction, the CPU
+lacks them, GRUB booted its default entry: check in the console when SLOF
+handed over to GRUB (`Trying to load`) against the 30 s keypress window
+that starts after `gencloud_boot_wait_ppc64le`. If the guest dies with an illegal instruction, the CPU
 model is too old for the kernel; POWER9 is the minimum for AlmaLinux 10 and
 Kitten.
 

@@ -87,7 +87,7 @@ source "qemu" "almalinux-8-gencloud-ppc64le" {
   headless           = var.headless
   machine_type       = var.ppc64le_machine_type
   cpu_model          = var.ppc64le_cpu_model
-  qemuargs           = concat(var.ppc64le_console_log != "" ? [["-serial", "file:${var.ppc64le_console_log}"]] : [], var.ppc64le_manual_boot ? [["-prom-env", "auto-boot?=false"]] : [])
+  qemuargs           = var.ppc64le_console_log != "" ? [["-serial", "file:${var.ppc64le_console_log}"]] : []
   memory             = var.memory_ppc64le
   net_device         = "virtio-net"
   qemu_binary        = var.qemu_binary

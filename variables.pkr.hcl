@@ -232,8 +232,8 @@ variable "ppc64le_cpu_model" {
   default = ""
 }
 
-variable "ppc64le_manual_boot" {
-  description = "Stop SLOF at the Open Firmware prompt (-prom-env auto-boot?=false) and boot the CD from the boot command, holding GRUB's 5 s countdown with keypresses first. Removes the boot-timing race of the TCG build; off on Jenkins"
+variable "ppc64le_grub_hold" {
+  description = "Start the ppc64le boot commands with 30 s of once-a-second keypresses GRUB's menu ignores, then move to the plain Install entry. The ISO's GRUB auto-boots after 5 s, so the first press to reach the menu stops the countdown wherever SLOF's speed put it; off on Jenkins"
 
   type    = bool
   default = false
@@ -396,17 +396,20 @@ variable "gencloud_boot_command_9_aarch64" {
   ]
 }
 
-# Prefix of the ppc64le boot commands when ppc64le_manual_boot is set: SLOF
-# waits at the OF prompt, so boot the CD explicitly, then press a key GRUB's
-# menu ignores once a second while GRUB loads - the first press that reaches
-# the menu stops its 5 s countdown. Finally move from the ISO's default entry
-# ("Test this media & install", rd.live.check) up to the plain "Install"
-# entry: hashing the 1.5 GB ISO takes the better part of an hour under
-# emulation. The "e" / "c" of the commands below then act on that entry.
+# Prefix of the ppc64le boot commands when ppc64le_grub_hold is set. Under
+# TCG on the GitHub runner SLOF reaches GRUB about 8 s after the VM starts
+# and the ISO's GRUB menu auto-boots 5 s later, so instead of guessing the
+# moment, press a key GRUB's menu ignores once a second for 30 s starting
+# right after the VM comes up: presses that arrive during SLOF are ignored,
+# the first one that reaches the menu stops its countdown. Then move up from
+# the ISO's default entry ("Test this media & install", rd.live.check: hashing
+# the 1.5 GB ISO takes the better part of an hour under emulation) to the
+# plain "Install" entry; the "e" / "c" of the commands below act on that
+# entry. SLOF keeps auto-booting, so the reboot after the install brings up
+# the installed system on its own.
 local "ppc64le_boot_prefix" {
-  expression = var.ppc64le_manual_boot ? concat(
-    ["boot cdrom<enter>", "<wait3>"],
-    [for i in range(15) : "<spacebar><wait1>"],
+  expression = var.ppc64le_grub_hold ? concat(
+    [for i in range(30) : "<spacebar><wait1>"],
     ["<up><wait1>"],
   ) : []
 }

@@ -117,15 +117,15 @@ runs:
         if [ "${{ inputs.arch }}" = "ppc64le" ]; then
           packer_opts="${packer_opts/\/usr\/bin\/qemu-system-ppc64le//usr/local/bin/qemu-system-ppc64-tcg}"
           packer_opts="${packer_opts} -var ppc64le_accelerator=tcg -var ppc64le_machine_type=pseries -var ppc64le_cpu_model=POWER9"
-          packer_opts="${packer_opts} -var gencloud_boot_wait_ppc64le=60s -var ssh_timeout=4h"
+          packer_opts="${packer_opts} -var gencloud_boot_wait_ppc64le=3s -var ssh_timeout=4h"
           packer_opts="${packer_opts} -var ppc64le_console_log=${{ github.workspace }}/ppc64le-console.log"
           # SLOF makes the VGA display the primary console when one exists, so
           # without this anaconda draws on the (uncaptured) VGA console
           packer_opts="${packer_opts} -var ppc64le_extra_kernel_args=console=hvc0"
-          # The ISO's GRUB menu times out after 5 s and SLOF's speed under TCG
-          # varies, so do not race it: SLOF stops at the OF prompt and the boot
-          # command boots the CD itself (see local.ppc64le_boot_prefix)
-          packer_opts="${packer_opts} -var ppc64le_manual_boot=true"
+          # The ISO's GRUB menu auto-boots 5 s after it appears (about 8 s
+          # after the VM starts here), so start typing early and hold the
+          # menu with harmless keypresses (see local.ppc64le_boot_prefix)
+          packer_opts="${packer_opts} -var ppc64le_grub_hold=true"
         fi
 
         # Image type e.g. Azure, Vagrant Libvirt, ...
