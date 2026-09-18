@@ -399,12 +399,15 @@ variable "gencloud_boot_command_9_aarch64" {
 # Prefix of the ppc64le boot commands when ppc64le_manual_boot is set: SLOF
 # waits at the OF prompt, so boot the CD explicitly, then press a key GRUB's
 # menu ignores once a second while GRUB loads - the first press that reaches
-# the menu stops its 5 s countdown, and the highlighted entry stays the
-# default one, exactly as the auto-boot path leaves it for the "e" below.
+# the menu stops its 5 s countdown. Finally move from the ISO's default entry
+# ("Test this media & install", rd.live.check) up to the plain "Install"
+# entry: hashing the 1.5 GB ISO takes the better part of an hour under
+# emulation. The "e" / "c" of the commands below then act on that entry.
 local "ppc64le_boot_prefix" {
   expression = var.ppc64le_manual_boot ? concat(
     ["boot cdrom<enter>", "<wait3>"],
     [for i in range(15) : "<spacebar><wait1>"],
+    ["<up><wait1>"],
   ) : []
 }
 
