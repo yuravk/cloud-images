@@ -74,7 +74,7 @@ source "qemu" "almalinux-9-gencloud-ext4-ppc64le" {
   ssh_username       = var.gencloud_ssh_username
   ssh_password       = var.gencloud_ssh_password
   ssh_timeout        = var.ssh_timeout
-  boot_command       = var.gencloud_ext4_boot_command_9_ppc64le
+  boot_command       = local.gencloud_ext4_boot_command_9_ppc64le
   boot_wait          = var.gencloud_boot_wait_ppc64le
   accelerator        = var.ppc64le_accelerator
   disk_interface     = "virtio-scsi"

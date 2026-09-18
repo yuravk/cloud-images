@@ -126,6 +126,7 @@ to emulation through variables that shared-steps passes on the command line:
 | `ppc64le_machine_type` | `pseries,accel=kvm,kvm-type=HV` | `pseries` |
 | `ppc64le_cpu_model` | empty (QEMU default = host CPU) | `POWER9` (EL10 baseline; fully implemented by TCG) |
 | `ppc64le_console_log` | empty | `<workspace>/ppc64le-console.log`, streamed into the job log as `[ppc64le console]` lines |
+| `ppc64le_extra_kernel_args` | empty | `console=hvc0`, typed at the end of the GRUB boot command. SLOF makes the VGA display the primary console when a VGA adapter exists (Packer needs one for the VNC keyboard), so without it anaconda draws its text UI on the uncaptured VGA console and hvc0 only shows a shell banner |
 | `gencloud_boot_wait_ppc64le` | `8s` | `60s` (SLOF + GRUB from CD are much slower; the ISO's GRUB menu waits 60 s) |
 | `ssh_timeout` | `3600s` | `4h` (the whole emulated install runs before SSH is up) |
 
