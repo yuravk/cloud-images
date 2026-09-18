@@ -106,6 +106,9 @@ jobs:
       id-token: write
       contents: read
     needs: [init-data]
+    # TEMPORARY: disabled while the ppc64le TCG leg is being tested, so the runs
+    # do not wait for (or pay for) the x86_64/aarch64 runners. Revert this commit.
+    if: ${{ false }}
     # use runs-on runners if within the almalinux org, otherwise GH runners.
     # Both are Ubuntu-with-KVM (metal in the org, nested-KVM on the gh-hosted
     # fallback), so the in-job QEMU test can boot the image just built.
@@ -173,7 +176,9 @@ jobs:
   # It does nothing if in the almalinux org, so 'Setup and start runner' step is skipped
   start-self-hosted-runner:
     name: ${{ inputs.version_major }} gencloud-aarch64 runner
-    if: ${{ inputs.self-hosted }}
+    # TEMPORARY: disabled while the ppc64le TCG leg is being tested, so the runs
+    # do not wait for (or pay for) the x86_64/aarch64 runners. Revert this commit.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     needs: [init-data]
 
@@ -206,7 +211,9 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    if: ${{ inputs.self-hosted }}
+    # TEMPORARY: disabled while the ppc64le TCG leg is being tested, so the runs
+    # do not wait for (or pay for) the x86_64/aarch64 runners. Revert this commit.
+    if: ${{ false }}
     needs: [init-data, start-self-hosted-runner]
     # AlmaLinux org: RunsOn a1.metal with the Ubuntu arm64 image (NOT
     # almalinux-9-aarch64) so the in-job QEMU test can run - shared-steps
@@ -292,7 +299,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        subtype: [gencloud, gencloud_ext4]
+        # TEMPORARY: gencloud_ext4 left out while the ppc64le TCG leg is being
+        # tested - one emulated build at a time. Restore [gencloud, gencloud_ext4].
+        subtype: [gencloud]
 
     env:
       TIME_STAMP: ${{ needs.init-data.outputs.time_stamp }}
