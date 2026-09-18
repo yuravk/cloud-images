@@ -232,6 +232,13 @@ variable "ppc64le_cpu_model" {
   default = ""
 }
 
+variable "ppc64le_manual_boot" {
+  description = "Stop SLOF at the Open Firmware prompt (-prom-env auto-boot?=false) and boot the CD from the boot command, holding GRUB's 5 s countdown with keypresses first. Removes the boot-timing race of the TCG build; off on Jenkins"
+
+  type    = bool
+  default = false
+}
+
 variable "ppc64le_extra_kernel_args" {
   description = "Extra installer kernel arguments typed at the end of the ppc64le boot commands; empty on Jenkins. The TCG leg passes console=hvc0 so anaconda's text UI goes to the captured serial console instead of the VGA one"
 
@@ -334,7 +341,7 @@ local "gencloud_boot_command_8_aarch64" {
 }
 
 local "gencloud_boot_command_8_ppc64le" {
-  expression = [
+  expression = concat(local.ppc64le_boot_prefix, [
     "c<wait>",
     "linux /ppc/ppc64/vmlinuz",
     " inst.stage2=hd:LABEL=AlmaLinux-8-${local.os_ver_minor_8}-ppc64le-dvd ro",
@@ -345,7 +352,7 @@ local "gencloud_boot_command_8_ppc64le" {
     "initrd /ppc/ppc64/initrd.img",
     "<enter>",
     "boot<enter><wait>",
-  ]
+  ])
 }
 
 variable "gencloud_boot_command_9_x86_64" {
@@ -389,9 +396,21 @@ variable "gencloud_boot_command_9_aarch64" {
   ]
 }
 
+# Prefix of the ppc64le boot commands when ppc64le_manual_boot is set: SLOF
+# waits at the OF prompt, so boot the CD explicitly, then press a key GRUB's
+# menu ignores once a second while GRUB loads - the first press that reaches
+# the menu stops its 5 s countdown, and the highlighted entry stays the
+# default one, exactly as the auto-boot path leaves it for the "e" below.
+local "ppc64le_boot_prefix" {
+  expression = var.ppc64le_manual_boot ? concat(
+    ["boot cdrom<enter>", "<wait3>"],
+    [for i in range(15) : "<spacebar><wait1>"],
+  ) : []
+}
+
 # Boot command for AlmaLinux OS 9 Generic Cloud ppc64le
 local "gencloud_boot_command_9_ppc64le" {
-  expression = [
+  expression = concat(local.ppc64le_boot_prefix, [
     "e",
     "<down><down>",
     "<leftCtrlOn>e<leftCtrlOff>",
@@ -406,7 +425,7 @@ local "gencloud_boot_command_9_ppc64le" {
     "<spacebar>",
     var.ppc64le_extra_kernel_args,
     "<leftCtrlOn>x<leftCtrlOff>",
-  ]
+  ])
 }
 
 variable "gencloud_boot_command_kitten_10_x86_64" {
@@ -452,7 +471,7 @@ variable "gencloud_boot_command_kitten_10_aarch64" {
 
 # Boot command for AlmaLinux OS Kitten 10 Generic Cloud ppc64le
 local "gencloud_boot_command_kitten_10_ppc64le" {
-  expression = [
+  expression = concat(local.ppc64le_boot_prefix, [
     "e",
     "<down><down>",
     "<leftCtrlOn>e<leftCtrlOff>",
@@ -467,7 +486,7 @@ local "gencloud_boot_command_kitten_10_ppc64le" {
     "<spacebar>",
     var.ppc64le_extra_kernel_args,
     "<leftCtrlOn>x<leftCtrlOff>",
-  ]
+  ])
 }
 
 variable "gencloud_boot_command_kitten_10_x86_64_v2" {
@@ -533,7 +552,7 @@ variable "gencloud_boot_command_10_aarch64" {
 
 # Boot command for AlmaLinux OS 10 Generic Cloud ppc64le
 local "gencloud_boot_command_10_ppc64le" {
-  expression = [
+  expression = concat(local.ppc64le_boot_prefix, [
     "e",
     "<down><down>",
     "<leftCtrlOn>e<leftCtrlOff>",
@@ -548,7 +567,7 @@ local "gencloud_boot_command_10_ppc64le" {
     "<spacebar>",
     var.ppc64le_extra_kernel_args,
     "<leftCtrlOn>x<leftCtrlOff>",
-  ]
+  ])
 }
 
 variable "gencloud_boot_command_10_x86_64_v2" {
@@ -603,7 +622,7 @@ local "gencloud_ext4_boot_command_8_aarch64" {
 }
 
 local "gencloud_ext4_boot_command_8_ppc64le" {
-  expression = [
+  expression = concat(local.ppc64le_boot_prefix, [
     "c<wait>",
     "linux /ppc/ppc64/vmlinuz",
     " inst.stage2=hd:LABEL=AlmaLinux-8-${local.os_ver_minor_8}-ppc64le-dvd ro",
@@ -614,7 +633,7 @@ local "gencloud_ext4_boot_command_8_ppc64le" {
     "initrd /ppc/ppc64/initrd.img",
     "<enter>",
     "boot<enter><wait>",
-  ]
+  ])
 }
 
 variable "gencloud_ext4_boot_command_9_x86_64" {
@@ -664,7 +683,7 @@ variable "gencloud_ext4_boot_command_9_aarch64" {
 
 # Boot command for AlmaLinux OS 9 Generic Cloud ext4 ppc64le
 local "gencloud_ext4_boot_command_9_ppc64le" {
-  expression = [
+  expression = concat(local.ppc64le_boot_prefix, [
     "e",
     "<down><down>",
     "<leftCtrlOn>e<leftCtrlOff>",
@@ -681,7 +700,7 @@ local "gencloud_ext4_boot_command_9_ppc64le" {
     "<spacebar>",
     var.ppc64le_extra_kernel_args,
     "<leftCtrlOn>x<leftCtrlOff>",
-  ]
+  ])
 }
 
 variable "gencloud_ext4_boot_command_kitten_10_x86_64" {
@@ -731,7 +750,7 @@ variable "gencloud_ext4_boot_command_kitten_10_aarch64" {
 
 # Boot command for AlmaLinux OS Kitten 10 Generic Cloud ext4 ppc64le
 local "gencloud_ext4_boot_command_kitten_10_ppc64le" {
-  expression = [
+  expression = concat(local.ppc64le_boot_prefix, [
     "e",
     "<down><down>",
     "<leftCtrlOn>e<leftCtrlOff>",
@@ -748,7 +767,7 @@ local "gencloud_ext4_boot_command_kitten_10_ppc64le" {
     "<spacebar>",
     var.ppc64le_extra_kernel_args,
     "<leftCtrlOn>x<leftCtrlOff>",
-  ]
+  ])
 }
 
 variable "gencloud_ext4_boot_command_kitten_10_x86_64_v2" {
@@ -820,7 +839,7 @@ variable "gencloud_ext4_boot_command_10_aarch64" {
 
 # Boot command for AlmaLinux OS 10 Generic Cloud ext4 ppc64le
 local "gencloud_ext4_boot_command_10_ppc64le" {
-  expression = [
+  expression = concat(local.ppc64le_boot_prefix, [
     "e",
     "<down><down>",
     "<leftCtrlOn>e<leftCtrlOff>",
@@ -837,7 +856,7 @@ local "gencloud_ext4_boot_command_10_ppc64le" {
     "<spacebar>",
     var.ppc64le_extra_kernel_args,
     "<leftCtrlOn>x<leftCtrlOff>",
-  ]
+  ])
 }
 
 variable "gencloud_ext4_boot_command_10_x86_64_v2" {

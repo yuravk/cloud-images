@@ -121,6 +121,10 @@ runs:
           # SLOF makes the VGA display the primary console when one exists, so
           # without this anaconda draws on the (uncaptured) VGA console
           packer_opts="${packer_opts} -var ppc64le_extra_kernel_args=console=hvc0"
+          # The ISO's GRUB menu times out after 5 s and SLOF's speed under TCG
+          # varies, so do not race it: SLOF stops at the OF prompt and the boot
+          # command boots the CD itself (see local.ppc64le_boot_prefix)
+          packer_opts="${packer_opts} -var ppc64le_manual_boot=true"
         fi
 
         # Image type e.g. Azure, Vagrant Libvirt, ...
