@@ -131,9 +131,16 @@ to emulation through variables that shared-steps passes on the command line:
 | `gencloud_boot_wait_ppc64le` | `8s` | `60s` (time for SLOF to reach its prompt; it then waits indefinitely) |
 | `ssh_timeout` | `3600s` | `4h` (the whole emulated install runs before SSH is up) |
 
-Ubuntu's emulator binary is `qemu-system-ppc64` (package `qemu-system-ppc`),
-not `qemu-system-ppc64le`; shared-steps rewrites the `qemu_binary` variable
-accordingly.
+The emulator is **not** Ubuntu 24.04's QEMU 8.2.2: under TCG it miscompiles
+POWER9 vector loads/stores, and the EL9/EL10 installer's Python crashes at
+"Starting installer" with segfaults or corrupted objects (reproduced on a
+test host; [QEMU issue 1769](https://gitlab.com/qemu-project/qemu/-/issues/1769)).
+shared-steps builds a small Fedora 43 container image with QEMU 10.x and
+installs `/usr/local/bin/qemu-system-ppc64-tcg`, a wrapper that runs
+`qemu-system-ppc64` in that container with host networking (Packer's VNC and
+SSH-forward ports stay on the host loopback) and the workspace and Packer's
+ISO cache mounted at their own paths; Packer gets it as `qemu_binary`. Disk
+images are still created by the host's `qemu-img`.
 
 What the job does and does not do:
 
