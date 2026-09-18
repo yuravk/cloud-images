@@ -54,6 +54,7 @@ The input set is identical to [`gencloud-build.yml`](BUILD_IMAGES.md):
 | `store_as_artifact` | `false` | Upload images as workflow artifacts. |
 | `upload_to_s3` | `true` | Upload to S3 in parallel. The test no longer depends on it; when true, the job summary / Mattermost message link the public S3 URL, otherwise they show the filename only. |
 | `notify_mattermost` | `true` | Post per-image build and test notifications to Mattermost. |
+| `ppc64le` | `false` | Also build the ppc64le images (`gencloud` and `gencloud_ext4`) on an x86_64 runner under QEMU TCG emulation. Experimental and slow (hours); see [ppc64le under TCG](#ppc64le-under-tcg-experimental). |
 
 There is no `run_test` input: the test always runs.
 
@@ -63,7 +64,9 @@ There is no `run_test` input: the test always runs.
 init-data
  |- build-gh-hosted (x86_64 matrix: subtype x variant)   -. shared-steps build,
  |- start-self-hosted-runner (fork EC2)                    | then gencloud-test-steps
- '- build-self-hosted (aarch64 matrix: subtype)          -' in-job on the local qcow2
+ |- build-self-hosted (aarch64 matrix: subtype)          -' in-job on the local qcow2
+ '- build-ppc64le-tcg (opt-in; ppc64le matrix: subtype)  -- shared-steps build under
+                                                            TCG + offline validation only
 ```
 
 There is no collect / publish stage: because the test runs in-job, each
@@ -73,6 +76,7 @@ build matrix leg reports its own build+test result directly. The matrix:
 | :--- | :--- | :--- |
 | `build-gh-hosted` | x86_64 | `subtype` in {`gencloud`, `gencloud_ext4`} x `variant` ({`10`,`10-v2`} for AL10/Kitten, else just the major) |
 | `build-self-hosted` | aarch64 | `subtype` in {`gencloud`, `gencloud_ext4`} |
+| `build-ppc64le-tcg` | ppc64le (emulated) | `subtype` in {`gencloud`, `gencloud_ext4`}; only when `ppc64le=true` |
 
 ### Stage composite actions
 
@@ -94,6 +98,7 @@ The change is backward-compatible - `gencloud-test.yml` keeps passing
 | :--- | :--- | :--- |
 | `build-gh-hosted` | `c7i.metal-24xl+c7a.metal-48xl+*8gd.metal*`, `image=ubuntu24-full-x64` | `ubuntu-24.04` (GitHub-hosted, has nested `/dev/kvm`) |
 | `build-self-hosted` | `a1.metal`, `image=ubuntu24-full-arm64`, `volume=40g` | self-hosted EC2 `a1.metal` (`EC2_AMI_ID_AL9_AARCH64`) |
+| `build-ppc64le-tcg` | same as `build-gh-hosted` (x86_64 metal; KVM unused, TCG is CPU-bound) | `ubuntu-24.04` |
 
 Both org runners are bare metal, so `/dev/kvm` is present for the in-job
 QEMU test. The composite installs `qemu-system-*` + `cloud-image-utils`
@@ -105,6 +110,44 @@ composite cannot run there, so the in-job aarch64 test step will fail on a
 fork. The AlmaLinux-org path (`ubuntu24-full-arm64`) is the target; fork
 CI should test aarch64 via the standalone `gencloud-test.yml` on
 `ubuntu-24.04-arm`.
+
+## ppc64le under TCG (experimental)
+
+There are no POWER runners, so the opt-in `build-ppc64le-tcg` job builds
+the ppc64le images on an x86_64 runner with QEMU's Tiny Code Generator
+(TCG): the guest CPU is emulated in software, the virtio disk and network
+stay paravirtual. It uses the **same Packer sources** Jenkins runs on a
+POWER host (boot ISO, GRUB boot command, kickstart, SSH + ansible), switched
+to emulation through variables that shared-steps passes on the command line:
+
+| Variable | Jenkins / POWER default | GitHub (TCG) value |
+| :--- | :--- | :--- |
+| `ppc64le_accelerator` | `none` (KVM-HV comes from the machine type) | `tcg` |
+| `ppc64le_machine_type` | `pseries,accel=kvm,kvm-type=HV` | `pseries` |
+| `ppc64le_cpu_model` | empty (QEMU default = host CPU) | `POWER9` (EL10 baseline; fully implemented by TCG) |
+| `ppc64le_console_log` | empty | `<workspace>/ppc64le-console.log`, streamed into the job log as `[ppc64le console]` lines |
+| `gencloud_boot_wait_ppc64le` | `8s` | `60s` (SLOF + GRUB from CD are much slower; the ISO's GRUB menu waits 60 s) |
+| `ssh_timeout` | `3600s` | `4h` (the whole emulated install runs before SSH is up) |
+
+Ubuntu's emulator binary is `qemu-system-ppc64` (package `qemu-system-ppc`),
+not `qemu-system-ppc64le`; shared-steps rewrites the `qemu_binary` variable
+accordingly.
+
+What the job does and does not do:
+
+- Offline validation runs as for every arch (release string, `almalinux-release`
+  arch, package list from the RPM database; root is partition 3: PReP boot,
+  `/boot`, `/`).
+- **No in-job boot test**: `gencloud-test-steps` needs KVM.
+- Expect one to a few hours per image. Everything the guest does (SLOF,
+  GRUB, anaconda, the ansible provisioning over SSH, the zero-fill of the
+  disk) is CPU-emulated; the job timeout is 12 hours.
+
+Tuning notes: if the console shows the GRUB menu timing out before the boot
+command is typed, or the keystrokes arriving while SLOF is still running,
+adjust `gencloud_boot_wait_ppc64le` in shared-steps. If the guest dies with
+an illegal instruction, the CPU model is too old for the kernel; POWER9 is
+the minimum for AlmaLinux 10 and Kitten.
 
 ## Required GitHub Configuration
 

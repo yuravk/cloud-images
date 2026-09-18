@@ -9,7 +9,7 @@ inputs:
     description: 'AlmaLinux variant to build (e.g., 9, 10, kitten)'
     required: true
   arch:
-    description: 'Target architecture (x86_64 or aarch64)'
+    description: 'Target architecture (x86_64, aarch64, or ppc64le - the latter built under QEMU TCG on an x86_64 runner)'
     required: true
   S3_ACCESS_KEY_ID:
     description: 'AWS S3 access key ID for uploading images'
@@ -107,6 +107,19 @@ runs:
             ;;
         esac
 
+        # ppc64le has no runner of its own: its sources are built under QEMU
+        # TCG full-system emulation on this x86_64 runner. The Ubuntu binary
+        # is qemu-system-ppc64 (there is no -ppc64le); switch the sources
+        # from KVM-HV to TCG with a POWER9 CPU (the EL10 baseline), capture
+        # the guest console for the job log, and give the emulated SLOF /
+        # GRUB / anaconda / ansible-over-SSH chain far more time.
+        if [ "${{ inputs.arch }}" = "ppc64le" ]; then
+          packer_opts="${packer_opts/qemu-system-ppc64le/qemu-system-ppc64}"
+          packer_opts="${packer_opts} -var ppc64le_accelerator=tcg -var ppc64le_machine_type=pseries -var ppc64le_cpu_model=POWER9"
+          packer_opts="${packer_opts} -var gencloud_boot_wait_ppc64le=60s -var ssh_timeout=4h"
+          packer_opts="${packer_opts} -var ppc64le_console_log=${{ github.workspace }}/ppc64le-console.log"
+        fi
+
         # Image type e.g. Azure, Vagrant Libvirt, ...
         image_type=$(echo ${{ inputs.type }} | sed -E 's/_/ /g;s/\b(.)/\u\1/g')
 
@@ -162,6 +175,8 @@ runs:
         case ${{ env.runner_os }} in
           ubuntu)
             sudo apt-get -y install qemu-kvm
+            # ppc64le is emulated (TCG) - needs the ppc64 system emulator
+            [ "${{ inputs.arch }}" = "ppc64le" ] && sudo apt-get -y install qemu-system-ppc
             sudo adduser "$(id -un)" kvm
             ;;
           rhel)
@@ -286,7 +301,26 @@ runs:
       run: |
         # Build ${{ inputs.type }} image
         # PACKER_LOG=1
+        if [ "${{ inputs.arch }}" = "ppc64le" ]; then
+          # A TCG build shows nothing between "Waiting for SSH" and the end of
+          # the install, which can take an hour or more. Stream the guest's
+          # serial console (SLOF, GRUB, anaconda) into the job log so a
+          # stuck install is visible live.
+          console_log=${{ github.workspace }}/ppc64le-console.log
+          sudo touch "${console_log}"
+          sudo tail -n +1 -F "${console_log}" | sed -u 's/^/[ppc64le console] /' &
+          console_tail=$!
+        fi
         sudo sh -c "/usr/bin/packer build ${{ env.PACKER_OPTS }} -only=${{ env.packer_source }} ."
+        [ -n "${console_tail:-}" ] && { sleep 2; kill "${console_tail}" 2>/dev/null || true; }
+        true
+
+    - name: Show the ppc64le installer console
+      if: failure() && inputs.arch == 'ppc64le'
+      shell: bash
+      run: |
+        # Last part of the guest console (SLOF/GRUB/anaconda output) of the failed build
+        sudo tail -n 200 ${{ github.workspace }}/ppc64le-console.log 2>/dev/null || echo "[Debug] no console log"
 
     - name: Locate image file, generate checksum
       shell: bash
@@ -314,6 +348,7 @@ runs:
         case ${{ inputs.arch }} in
           x86_64*) partition=4 ;;
           aarch64*) partition=3 ;;
+          ppc64le) partition=3 ;;  # PReP boot, /boot, /
           *) false ;;
         esac
 
@@ -525,7 +560,9 @@ runs:
       run: |
         # Install aws CLI
         if ! aws --version 2>/dev/null; then
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-${{ inputs.arch }}.zip" -o "awscliv2.zip"
+          # The CLI runs on the runner, whose arch can differ from the image
+          # arch (ppc64le images are built on an x86_64 runner)
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
           unzip -qq awscliv2.zip
           sudo ./aws/install
         else

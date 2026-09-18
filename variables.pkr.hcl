@@ -203,6 +203,42 @@ variable "root_shutdown_command" {
   default = "/sbin/shutdown -hP now"
 }
 
+# ppc64le QEMU knobs. The defaults reproduce the Jenkins build on a POWER
+# host (KVM-HV through the machine type, QEMU's default CPU = the host CPU).
+# The GitHub ppc64le leg has no POWER runner and overrides them to run the
+# whole install under TCG full-system emulation on an x86_64 runner:
+#   -var ppc64le_accelerator=tcg -var ppc64le_machine_type=pseries
+#   -var ppc64le_cpu_model=POWER9 -var ppc64le_console_log=<file>
+# together with a longer gencloud_boot_wait_ppc64le and ssh_timeout, because
+# SLOF, GRUB, anaconda and the ansible run are all several times slower.
+variable "ppc64le_accelerator" {
+  description = "Packer 'accelerator' of the ppc64le sources: 'none' lets the machine type pick KVM-HV (POWER host), 'tcg' emulates on any host"
+
+  type    = string
+  default = "none"
+}
+
+variable "ppc64le_machine_type" {
+  description = "QEMU machine type of the ppc64le sources"
+
+  type    = string
+  default = "pseries,accel=kvm,kvm-type=HV"
+}
+
+variable "ppc64le_cpu_model" {
+  description = "QEMU CPU model of the ppc64le sources; empty = QEMU's default (host CPU under KVM). Under TCG use POWER9 (the EL10 baseline)"
+
+  type    = string
+  default = ""
+}
+
+variable "ppc64le_console_log" {
+  description = "If set, capture the ppc64le guest's serial console (hvc0) into this file"
+
+  type    = string
+  default = ""
+}
+
 variable "qemu_binary" {
   description = "Path of QEMU binary"
 

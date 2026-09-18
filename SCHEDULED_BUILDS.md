@@ -59,6 +59,8 @@ week.
 
 - `aws-build-test-copy-release.yml` spells the Kitten choice `kitten_10`
   (not `10-kitten`) - the dispatcher translates.
+- `gencloud-build-test.yml`'s ppc64le leg is opt-in (`ppc64le=false` by
+  default), so scheduled runs never start the hours-long TCG build.
 - `oci-build-release-test-publish.yml` has **no Kitten option** - on
   Kitten weeks the OCI dispatch is skipped (noted in the job summary).
 - `vagrant-build-test-publish.yml` is **temporarily paused on Kitten
