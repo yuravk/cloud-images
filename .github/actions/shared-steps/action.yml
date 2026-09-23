@@ -109,13 +109,13 @@ runs:
 
         # ppc64le has no runner of its own: its sources are built under QEMU
         # TCG full-system emulation on this x86_64 runner, with the emulator
-        # wrapper the Install KVM step creates (a newer QEMU than Ubuntu's,
-        # see there). Switch the sources from KVM-HV to TCG with a POWER9 CPU
+        # built from source in the step above (the distribution's QEMU does
+        # not do, see there). Switch the sources from KVM-HV to TCG with a POWER9 CPU
         # (the EL10 baseline), capture the guest console for the job log, and
         # give the emulated SLOF / GRUB / anaconda / ansible-over-SSH chain
         # far more time.
         if [ "${{ inputs.arch }}" = "ppc64le" ]; then
-          packer_opts="${packer_opts/\/usr\/bin\/qemu-system-ppc64le//usr/local/bin/qemu-system-ppc64-tcg}"
+          packer_opts=$(echo "${packer_opts}" | sed -E 's#-var qemu_binary=[^ ]+#-var qemu_binary=/usr/local/bin/qemu-system-ppc64#')
           packer_opts="${packer_opts} -var ppc64le_accelerator=tcg -var ppc64le_machine_type=pseries -var ppc64le_cpu_model=POWER9"
           packer_opts="${packer_opts} -var gencloud_boot_wait_ppc64le=3s -var ssh_timeout=4h"
           packer_opts="${packer_opts} -var ppc64le_console_log=${{ github.workspace }}/ppc64le-console.log"
@@ -186,37 +186,6 @@ runs:
             # s390x is emulated (TCG) - needs the s390x system emulator and
             # qemu-img for the blank target disk
             [ "${{ inputs.arch }}" = "s390x" ] && sudo apt-get -y install qemu-system-s390x qemu-utils
-            # ppc64le is emulated (TCG). Ubuntu 24.04's QEMU 8.2.2 miscompiles
-            # POWER9 vector loads/stores under TCG and the EL9/EL10 installer's
-            # Python crashes at startup (segfaults and corrupted objects; QEMU
-            # issue 1769). Fedora's QEMU 10.x does not, so run the emulator from
-            # a Fedora container through a wrapper that Packer uses as
-            # qemu_binary: host networking puts the VNC and SSH-forward ports
-            # where Packer expects them, and the workspace and Packer's ISO
-            # cache are mounted at their own paths so the arguments Packer
-            # passes are valid inside. qemu-img (disk creation) is the host's.
-            if [ "${{ inputs.arch }}" = "ppc64le" ]; then
-              sudo apt-get -y install qemu-utils
-              # (heredoc bodies sit at the step's base indent so their
-              # terminators reach column 0 once YAML strips the indentation)
-              docker build -q -t qemu-ppc64-tcg - <<'DOCKERFILE'
-        FROM registry.fedoraproject.org/fedora:43
-        RUN dnf -y -q install qemu-system-ppc-core && dnf -q clean all
-        DOCKERFILE
-              sudo tee /usr/local/bin/qemu-system-ppc64-tcg >/dev/null <<'WRAPPER'
-        #!/bin/bash
-        # QEMU ppc64 system emulator from the qemu-ppc64-tcg container (see
-        # shared-steps). Packer runs it under sudo from the workspace, so the
-        # current directory (relative output paths) and root's Packer ISO
-        # cache (absolute paths) are what has to be visible inside.
-        exec docker run --rm -i --network host --init \
-          -v "${PWD}:${PWD}" -w "${PWD}" \
-          -v /root/.cache/packer:/root/.cache/packer \
-          qemu-ppc64-tcg qemu-system-ppc64 "$@"
-        WRAPPER
-              sudo chmod 0755 /usr/local/bin/qemu-system-ppc64-tcg
-              docker run --rm qemu-ppc64-tcg qemu-system-ppc64 --version
-            fi
             sudo adduser "$(id -un)" kvm
             ;;
           rhel)
@@ -224,6 +193,52 @@ runs:
             sudo usermod --append -G kvm "$(id -un)"
             ;;
         esac
+
+    - name: Build the ppc64le emulator from source (QEMU ${{ env.QEMU_TCG_VERSION }})
+      if: inputs.arch == 'ppc64le'
+      shell: bash
+      env:
+        QEMU_TCG_VERSION: "10.1.5"
+        QEMU_TCG_SHA256: "1f1209b4db82e6c4417eaf6e7e0b073563572a042d9fb7492b084ba65a9c0693"
+      run: |
+        # ppc64le is emulated (TCG) and the emulator has to come from
+        # upstream: the distributions' packages do not do. Ubuntu 24.04's
+        # QEMU 8.2.2 miscompiles POWER9 vector loads/stores under TCG and the
+        # EL9/EL10 installer's Python crashes at startup (segfaults and
+        # corrupted objects; QEMU issue 1769); AlmaLinux ships only the
+        # x86_64-only qemu-kvm and EPEL cannot carry qemu-system-ppc because
+        # its source package is in the distribution. QEMU 10.1 has the fix
+        # and its ppc64 system emulator builds in a few minutes on the metal
+        # runner, so build just that target and install it to /usr/local;
+        # Packer gets it as qemu_binary (Prepare stuff). Disk images are still
+        # created by the distribution's qemu-img.
+        case ${{ env.runner_os }} in
+          ubuntu)
+            sudo apt-get -y install build-essential ninja-build python3 pkg-config \
+              libglib2.0-dev libpixman-1-dev libslirp-dev libfdt-dev zlib1g-dev
+            ;;
+          rhel)
+            # ninja-build, libslirp-devel and libfdt-devel live in CRB; zlib's
+            # -devel is zlib-devel on EL9 and zlib-ng-compat-devel on EL10
+            zlib_devel=$(dnf -q repoquery --qf '%{name}' zlib-ng-compat-devel zlib-devel 2>/dev/null | head -1)
+            sudo dnf -y -q --enablerepo=crb install gcc make ninja-build python3 pkgconf-pkg-config \
+              glibc-devel glib2-devel pixman-devel libslirp-devel libfdt-devel "${zlib_devel:-zlib-devel}" \
+              bzip2 xz tar diffutils findutils
+            ;;
+        esac
+        build_dir=$(mktemp -d /tmp/qemu-build.XXXXXX)
+        cd "${build_dir}" || exit 1
+        curl -fsSL -o qemu.tar.xz "https://download.qemu.org/qemu-${QEMU_TCG_VERSION}.tar.xz"
+        echo "${QEMU_TCG_SHA256}  qemu.tar.xz" | sha256sum -c -
+        tar xJf qemu.tar.xz
+        cd "qemu-${QEMU_TCG_VERSION}" || exit 1
+        ./configure --target-list=ppc64-softmmu --prefix=/usr/local \
+          --enable-slirp --disable-docs --disable-werror \
+          --disable-gtk --disable-sdl --disable-opengl >/dev/null
+        make -j"$(nproc)" >/dev/null
+        sudo make install >/dev/null
+        cd / && rm -rf "${build_dir}"
+        /usr/local/bin/qemu-system-ppc64 --version
 
     - name: Check nested virtualization support
       if: inputs.arch == 'x86_64' && inputs.type != 'vagrant_virtualbox' && inputs.type != 'vagrant_vmware' && inputs.runner != 'aws-ec2'
@@ -404,8 +419,6 @@ runs:
       run: |
         # Last part of the guest console (SLOF/GRUB/anaconda output) of the failed build
         sudo tail -n 200 ${{ github.workspace }}/ppc64le-console.log 2>/dev/null || echo "[Debug] no console log"
-        # Packer kills the wrapper, not the container behind it
-        docker ps -q --filter ancestor=qemu-ppc64-tcg | xargs -r docker kill
 
     - name: Locate image file, generate checksum
       shell: bash
