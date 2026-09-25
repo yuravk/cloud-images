@@ -1,0 +1,246 @@
+name: "Vagrant: Build VMware aarch64 box (macOS)"
+run-name: >-
+  Vagrant: AlmaLinux ${{ inputs.version_major == '10-kitten' && 'Kitten 10' || inputs.version_major }} VMware aarch64 box (macOS)
+
+# Builds the Vagrant VMware Desktop aarch64 box - the one so far built by
+# hand on a Mac with VMware Fusion - on a GitHub-hosted Apple Silicon runner
+# (macos-latest), with the same Packer sources and Ansible provisioning:
+#   9          vmware-iso.almalinux-9-aarch64
+#   10         vmware-iso.almalinux_10_vagrant_vmware_aarch64
+#   10-kitten  vmware-iso.almalinux_kitten_10_vagrant_vmware_aarch64
+#
+# EXPERIMENTAL: VMware Fusion runs its guests through Apple's
+# Hypervisor.framework, and GitHub's macOS runners are themselves virtual
+# machines. Whether they expose the hypervisor to a nested guest is exactly
+# what this workflow tries out; the "Runner" step prints kern.hv_support
+# (1 = usable) and stops the run early with a clear message when it is 0.
+#
+# The shared-steps composite is Linux-only (apt/dnf, KVM), so this workflow
+# carries its own steps: Homebrew for Packer, Ansible, Vagrant and the
+# vagrant-vmware-utility; VMware Fusion from the installer image in the
+# project's S3 tools area.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_major:
+        description: 'AlmaLinux major version'
+        required: true
+        default: '10'
+        type: choice
+        options:
+          - 10-kitten
+          - 10
+          - 9
+
+      run_test:
+        description: "Boot the box with vagrant up and check it"
+        required: true
+        type: boolean
+        default: true
+
+      store_as_artifact:
+        description: "Store the box in the workflow artifacts"
+        required: true
+        type: boolean
+        default: true
+
+      upload_to_s3:
+        description: "Upload the box to the S3 bucket"
+        required: true
+        type: boolean
+        default: false
+
+env:
+  PACKER_GITHUB_API_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+  FUSION_DMG_URL: https://almalinux-images.s3.us-east-1.amazonaws.com/tools/vmware/VMware-Fusion-26H1u1-25689522_universal.dmg
+
+jobs:
+  build:
+    name: ${{ inputs.version_major }} vagrant_vmware-aarch64 build (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout ${{ github.action_repository }}
+        uses: actions/checkout@v6
+
+      - name: Runner
+        run: |
+          # macos-latest is an Apple Silicon VM; VMware Fusion needs the
+          # hypervisor to be usable from inside it
+          sw_vers
+          echo "[Debug] arch: $(uname -m), CPUs: $(sysctl -n hw.ncpu), memory: $(( $(sysctl -n hw.memsize) / 1024 / 1024 )) MiB"
+          hv=$(sysctl -n kern.hv_support 2>/dev/null || echo 0)
+          echo "[Debug] kern.hv_support: ${hv}"
+          df -h / | tail -1
+          if [ "$(uname -m)" != "arm64" ]; then
+            echo "::error::This workflow builds aarch64 boxes and needs an Apple Silicon runner, got $(uname -m)"
+            exit 1
+          fi
+          if [ "${hv}" != "1" ]; then
+            echo "::error::The runner does not expose Hypervisor.framework (kern.hv_support=${hv}): VMware Fusion cannot start a guest here. The box has to be built on a physical Mac."
+            exit 1
+          fi
+
+      - name: Set the Packer source and names
+        run: |
+          case "${{ inputs.version_major }}" in
+            9)         source=vmware-iso.almalinux-9-aarch64;                     mask='AlmaLinux-9-Vagrant-vmware-*.aarch64.box';            release_string='AlmaLinux release 9';          release_package=almalinux-release ;;
+            10)        source=vmware-iso.almalinux_10_vagrant_vmware_aarch64;     mask='AlmaLinux-10-Vagrant-vmware-*.aarch64.box';           release_string='AlmaLinux release 10';         release_package=almalinux-release ;;
+            10-kitten) source=vmware-iso.almalinux_kitten_10_vagrant_vmware_aarch64; mask='AlmaLinux-Kitten-Vagrant-vmware-10-*.aarch64.box'; release_string='AlmaLinux Kitten release 10';  release_package=almalinux-kitten-release ;;
+          esac
+          {
+            echo "packer_source=${source}"
+            echo "output_mask=${mask}"
+            echo "RELEASE_STRING=${release_string}"
+            echo "RELEASE_PACKAGE=${release_package}"
+          } >> "$GITHUB_ENV"
+
+      - name: Install Packer, Ansible and Vagrant
+        run: |
+          brew tap hashicorp/tap
+          brew install hashicorp/tap/packer ansible
+          brew install --cask vagrant
+          packer version
+          ansible --version | head -1
+          vagrant --version
+
+      - name: Install VMware Fusion
+        run: |
+          curl -fsSL -o /tmp/fusion.dmg "${FUSION_DMG_URL}"
+          mount_point=$(hdiutil attach -nobrowse -noverify -readonly /tmp/fusion.dmg | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)
+          echo "[Debug] mounted at: ${mount_point}"
+          app=$(find "${mount_point}" -maxdepth 1 -name 'VMware Fusion*.app' | head -1)
+          [ -n "${app}" ] || { echo "::error::No VMware Fusion.app in ${FUSION_DMG_URL}"; ls -la "${mount_point}"; exit 1; }
+          sudo rm -rf "/Applications/VMware Fusion.app"
+          sudo cp -R "${app}" "/Applications/VMware Fusion.app"
+          hdiutil detach "${mount_point}" -quiet || true
+          rm -f /tmp/fusion.dmg
+          sudo xattr -dr com.apple.quarantine "/Applications/VMware Fusion.app" || true
+          # First-run setup (the vmnet networking, the privileged helpers)
+          # that Fusion otherwise does interactively; Fusion is free and
+          # needs no serial number
+          init="/Applications/VMware Fusion.app/Contents/Library/Initialize VMware Fusion.tool"
+          [ -x "${init}" ] && sudo "${init}" set "" "" "" || echo "[Debug] Initialize VMware Fusion.tool not run"
+          vmrun="/Applications/VMware Fusion.app/Contents/Public/vmrun"
+          [ -x "${vmrun}" ] || vmrun="/Applications/VMware Fusion.app/Contents/Library/vmrun"
+          echo "VMRUN=${vmrun}" >> "$GITHUB_ENV"
+          "${vmrun}" 2>&1 | head -3 || true
+          echo "[Debug] VMware Fusion $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "/Applications/VMware Fusion.app/Contents/Info.plist")"
+          # the vmnet NAT and host-only networks the guest reaches Packer's
+          # HTTP server (kickstart) and SSH through
+          sudo "/Applications/VMware Fusion.app/Contents/Library/vmnet-cli" --configure || true
+          sudo "/Applications/VMware Fusion.app/Contents/Library/vmnet-cli" --start || true
+          sudo "/Applications/VMware Fusion.app/Contents/Library/vmnet-cli" --status || true
+
+      - name: Initialize packer
+        run: packer init -upgrade .
+
+      - name: Build the box
+        run: |
+          # The runner has 3 vCPUs and 7 GB of memory: leave some for macOS
+          packer build -color=false -var cpus=2 -var memory_aarch64=4096 -var headless=true \
+            -only="${packer_source}" .
+
+      - name: Locate the box, generate checksum
+        run: |
+          image_file=$(ls -1 ${output_mask} | head -n 1)
+          [ -n "${image_file}" ] || { echo "::error::No box matching ${output_mask}"; exit 1; }
+          ls -la "${image_file}"
+          shasum -a 256 "${image_file}" > "${image_file}.sha256sum"
+          cat "${image_file}.sha256sum"
+          echo "IMAGE_FILE=${image_file}" >> "$GITHUB_ENV"
+
+      - name: Test the box
+        if: inputs.run_test
+        run: |
+          # The Vagrant VMware provider: the utility service plus the plugin
+          brew install --cask vagrant-vmware-utility
+          vagrant plugin install vagrant-vmware-desktop
+          vagrant box add --name vmware-aarch64-test "${IMAGE_FILE}"
+          # Fusion on Apple Silicon needs the vmxnet3 adapter set explicitly
+          # (see the README note on the aarch64 VMware box)
+          cat > Vagrantfile <<'EOF'
+          Vagrant.configure("2") do |config|
+            config.vm.box = "vmware-aarch64-test"
+            config.vm.synced_folder ".", "/vagrant", disabled: true
+            config.vm.provider "vmware_desktop" do |v|
+              v.gui = false
+              v.vmx["ethernet0.virtualdev"] = "vmxnet3"
+            end
+          end
+          EOF
+          vagrant up --provider=vmware_desktop
+          echo "[Debug] AlmaLinux release:"
+          vagrant ssh -c "grep '${RELEASE_STRING}' /etc/almalinux-release"
+          echo "[Debug] System architecture:"
+          vagrant ssh -c "rpm -q --qf='%{ARCH}\n' ${RELEASE_PACKAGE} | grep aarch64"
+          echo "[Debug] Vagrant-specific RPM packages:"
+          vagrant ssh -c "rpm -q cloud-init cloud-utils-growpart cifs-utils jq nfs-utils rsync tcpdump tuned open-vm-tools"
+          vagrant ssh -c "rpm -qa --queryformat '%{NAME}\n' | sort" > "${IMAGE_FILE}.txt"
+          vagrant destroy --force || true
+          vagrant box remove vmware-aarch64-test --force || true
+          rm -f Vagrantfile
+
+      - name: Show the VMware logs
+        if: failure()
+        run: |
+          # Packer's and Fusion's own logs of the failed build or test
+          find . "${HOME}/Library/Logs/VMware" -maxdepth 3 -name 'vmware*.log' -print 2>/dev/null | head -5 | while read -r f; do
+            echo "===== ${f}"; tail -n 60 "${f}"
+          done
+
+      - uses: actions/upload-artifact@v7
+        name: Store the box as artifact
+        if: inputs.store_as_artifact
+        with:
+          name: ${{ env.IMAGE_FILE }}
+          path: ${{ env.IMAGE_FILE }}
+          compression-level: 1
+
+      - uses: actions/upload-artifact@v7
+        name: Store the checksum and package list as artifacts
+        if: inputs.store_as_artifact
+        with:
+          name: ${{ env.IMAGE_FILE }}.meta
+          path: |
+            ${{ env.IMAGE_FILE }}.sha256sum
+            ${{ env.IMAGE_FILE }}.txt
+          if-no-files-found: ignore
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        if: inputs.upload_to_s3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Upload to S3
+        if: inputs.upload_to_s3
+        run: |
+          case "${{ inputs.version_major }}" in
+            10-kitten) path="images/kitten/10/vagrant/${{ github.run_id }}" ;;
+            *)         path="images/${{ inputs.version_major }}/vagrant/${{ github.run_id }}" ;;
+          esac
+          for f in "${IMAGE_FILE}" "${IMAGE_FILE}.sha256sum" "${IMAGE_FILE}.txt"; do
+            [ -f "${f}" ] && aws s3 cp --no-progress "${f}" "s3://${{ vars.AWS_S3_BUCKET }}/${path}/"
+          done
+          echo "S3_PATH=${path}" >> "$GITHUB_ENV"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## AlmaLinux ${{ inputs.version_major }} Vagrant VMware aarch64 box (macOS)"
+            echo ""
+            echo "- Packer source: \`${packer_source:-n/a}\`"
+            echo "- Box: \`${IMAGE_FILE:-not built}\`"
+            [ -f "${IMAGE_FILE}.sha256sum" ] && echo "- SHA256: \`$(cut -d' ' -f1 "${IMAGE_FILE}.sha256sum")\`"
+            if [ "${{ inputs.run_test }}" = "true" ]; then
+              [ -s "${IMAGE_FILE}.txt" ] && echo "- Test: passed ($(wc -l < "${IMAGE_FILE}.txt" | tr -d ' ') packages)" || echo "- Test: failed or not reached"
+            fi
+            [ -n "${S3_PATH:-}" ] && echo "- S3: \`${S3_PATH}\`"
+            true
+          } >> "$GITHUB_STEP_SUMMARY"

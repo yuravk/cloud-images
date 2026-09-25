@@ -236,6 +236,35 @@ Generate a one-shot registration token in the repo under *Settings â†’ Actions â
 
 > **Labels must match exactly** and `--no-default-labels` is required. If the matrix leg's label doesn't find a registered runner with that exact label set, the job will sit in `Queued` state forever.
 
+## VMware Desktop aarch64 on macOS (experimental)
+
+The aarch64 VMware box, so far built by hand on a Mac with VMware Fusion,
+has its own workflow: [`.github/workflows/vagrant-vmware-aarch64-macos.yml`](.github/workflows/vagrant-vmware-aarch64-macos.yml)
+(`Vagrant: Build VMware aarch64 box (macOS)`). It runs on the GitHub-hosted
+Apple Silicon runner `macos-latest` and builds the existing Packer sources:
+
+| `version_major` | Packer source |
+| :--- | :--- |
+| `9` | `vmware-iso.almalinux-9-aarch64` |
+| `10` | `vmware-iso.almalinux_10_vagrant_vmware_aarch64` |
+| `10-kitten` | `vmware-iso.almalinux_kitten_10_vagrant_vmware_aarch64` |
+
+The shared-steps composite is Linux-only, so the workflow installs its own
+tooling: Packer (`hashicorp/tap`), Ansible and Vagrant from Homebrew, and
+VMware Fusion from the installer image in the project's S3 tools area
+(`tools/vmware/VMware-Fusion-26H1u1-25689522_universal.dmg`), copied to
+`/Applications` and initialised non-interactively (Fusion needs no serial
+number). With `run_test` it installs `vagrant-vmware-utility` and the
+`vagrant-vmware-desktop` plugin, boots the box with `vagrant up` (with the
+`vmxnet3` adapter Fusion on Apple Silicon needs) and checks the release,
+architecture and Vagrant packages. The box, its checksum and package list
+go to the workflow artifacts, and to S3 with `upload_to_s3`.
+
+It is experimental because `macos-latest` is itself a virtual machine and
+Fusion needs Apple's Hypervisor.framework inside it. The first step prints
+`kern.hv_support` and stops the run with a clear message when it is `0`;
+then the box can only be built on a physical Mac.
+
 ## Image testing
 
 Unlike the cloud-image workflows, `vagrant-build.yml` runs an actual boot + SSH test when `run_test: true`:
