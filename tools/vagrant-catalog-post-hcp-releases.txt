@@ -1,0 +1,37 @@
+# Boxes released after HCP Vagrant closed (2026-10-01) and before the
+# "Vagrant: Build, Test and Publish" workflow started publishing to the S3
+# catalog itself: one S3 key per line, added to a catalog rebuilt from the
+# HCP snapshot with
+#   tools/vagrant_catalog.py --hcp-dir tools/hcp-registry-snapshot \
+#     --out <DIR> --extra tools/vagrant-catalog-post-hcp-releases.txt
+# Later releases are in the S3 catalog only (and its .history backups).
+
+# AlmaLinux OS 9.8 20261005 (scheduled build of 2026-10-05)
+images/9/9.8/vagrant/20261005124539/AlmaLinux-9-Vagrant-hyperv-9.8-20261005.x86_64.box
+images/9/9.8/vagrant/20261005124539/AlmaLinux-9-Vagrant-libvirt-9.8-20261005.x86_64.box
+images/9/9.8/vagrant/20261005124539/AlmaLinux-9-Vagrant-virtualbox-9.8-20261005.x86_64.box
+images/9/9.8/vagrant/20261005124539/AlmaLinux-9-Vagrant-vmware-9.8-20261005.x86_64.box
+images/9/9.8/vagrant/20261005124539/AlmaLinux-9-Vagrant-vmware-9.8-20261005.aarch64.box
+images/9/9.8/vagrant/20261005124539/AlmaLinux-9-Vagrant-parallels-9.8-20261005.aarch64.box
+
+# AlmaLinux OS 10.2 20261012.0 (https://github.com/AlmaLinux/cloud-images/actions/runs/38252804765)
+images/10/10.2/vagrant/20261012130129/AlmaLinux-10-Vagrant-hyperv-10.2-20261012.0.x86_64.box
+images/10/10.2/vagrant/20261012130129/AlmaLinux-10-Vagrant-libvirt-10.2-20261012.0.x86_64.box
+images/10/10.2/vagrant/20261012130129/AlmaLinux-10-Vagrant-virtualbox-10.2-20261012.0.x86_64.box
+images/10/10.2/vagrant/20261012130129/AlmaLinux-10-Vagrant-vmware-10.2-20261012.0.x86_64.box
+images/10/10.2/vagrant/20261012130129/AlmaLinux-10-Vagrant-vmware-10.2-20261012.0.aarch64.box
+images/10/10.2/vagrant/20261012130129/AlmaLinux-10-Vagrant-parallels-10.2-20261012.0.aarch64.box
+images/10/10.2/vagrant/20261012130129/AlmaLinux-10-Vagrant-hyperv-10.2-20261012.0.x86_64_v2.box
+images/10/10.2/vagrant/20261012130129/AlmaLinux-10-Vagrant-libvirt-10.2-20261012.0.x86_64_v2.box
+images/10/10.2/vagrant/20261012130129/AlmaLinux-10-Vagrant-virtualbox-10.2-20261012.0.x86_64_v2.box
+images/10/10.2/vagrant/20261012130129/AlmaLinux-10-Vagrant-vmware-10.2-20261012.0.x86_64_v2.box
+
+# VirtualBox arm64 boxes (issue #376, PR #377), built in ci-dev and verified
+# on Apple Silicon by the reporter; each is its own version with only the
+# virtualbox/arm64 provider
+# AlmaLinux OS 9.8 20261013 (https://github.com/AlmaLinux/cloud-images-ci-dev/actions/runs/38382539889)
+images/9/9.8/vagrant/20261013101919/AlmaLinux-9-Vagrant-virtualbox-9.8-20261013.aarch64.box
+# AlmaLinux OS 10.2 20261014.0 (https://github.com/AlmaLinux/cloud-images-ci-dev/actions/runs/38533104835)
+images/10/10.2/vagrant/20261014080914/AlmaLinux-10-Vagrant-virtualbox-10.2-20261014.0.aarch64.box
+# AlmaLinux OS Kitten 10 20261014.0 (https://github.com/AlmaLinux/cloud-images-ci-dev/actions/runs/38538092173)
+images/kitten/10/vagrant/20261014085124/AlmaLinux-Kitten-Vagrant-virtualbox-10-20261014.0.aarch64.box
