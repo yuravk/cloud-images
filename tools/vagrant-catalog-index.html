@@ -275,8 +275,18 @@ const DESCRIPTIONS = {
 const PROVIDERS = {
   libvirt: "libvirt", virtualbox: "VirtualBox", vmware_desktop: "VMware", hyperv: "Hyper-V", parallels: "Parallels",
 };
-// "unknown": versions published to HCP before it recorded architectures (Vagrant treats them as amd64-compatible)
 const ARCHES = { amd64: "x86_64", arm64: "aarch64", unknown: "unspecified" };
+
+// The versions published to HCP before it recorded architectures say
+// "unknown" (Vagrant then takes them on any host); show the architecture
+// their box file is built for instead
+function archOf(p) {
+  if (p.architecture && p.architecture !== "unknown") return p.architecture;
+  const file = (p.url || "").split("/").pop();
+  if (/[.-]aarch64[._]/.test(file)) return "arm64";
+  if (/[.-]x86_64[._]/.test(file)) return "amd64";
+  return "unknown";
+}
 
 const app = document.getElementById("app");
 const catalog = new Map();
@@ -366,13 +376,14 @@ async function loadBox(box) {
   const data = await r.json();
   data.versions = (data.versions || []).slice().sort((a, b) => compareVersions(b.version, a.version));
   if (!data.description) data.description = DESCRIPTIONS[box] || "";
+  for (const v of data.versions) for (const p of v.providers || []) p.arch = archOf(p);
   catalog.set(box, data);
   return data;
 }
 
 function summarize(data) {
   const providers = new Set(), arches = new Set();
-  for (const v of data.versions) for (const p of v.providers || []) { providers.add(p.name); arches.add(p.architecture); }
+  for (const v of data.versions) for (const p of v.providers || []) { providers.add(p.name); arches.add(p.arch); }
   return {
     providers: sortProviders([...providers]),
     arches: [...arches].sort(),
@@ -463,15 +474,15 @@ async function renderIndex() {
 function providerRows(version, filterProvider, filterArch) {
   const order = Object.keys(PROVIDERS);
   const rows = (version.providers || [])
-    .filter((p) => (!filterProvider || p.name === filterProvider) && (!filterArch || p.architecture === filterArch))
-    .sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name) || a.architecture.localeCompare(b.architecture));
+    .filter((p) => (!filterProvider || p.name === filterProvider) && (!filterArch || p.arch === filterArch))
+    .sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name) || a.arch.localeCompare(b.arch));
   return rows.map((p) => {
     const size = h("td", { class: "num" }, "...");
     boxSize(p.url).then((n) => { size.textContent = humanSize(n) || "-"; });
     const file = p.url.split("/").pop();
     return h("tr", {},
       h("td", {}, providerName(p.name)),
-      h("td", {}, archName(p.architecture), p.default_architecture ? h("span", { class: "badge default", style: "margin-left:8px", title: "Vagrant picks this architecture when the host's does not match any" }, "default") : null),
+      h("td", {}, archName(p.arch), p.default_architecture ? h("span", { class: "badge default", style: "margin-left:8px", title: "Vagrant picks this architecture when the host's does not match any" }, "default") : null),
       size,
       h("td", {}, h("span", { class: "sha", title: `${p.checksum_type}: ${p.checksum}` }, `${(p.checksum || "").slice(0, 12)}...`), copyButton(p.checksum || "", `the ${p.checksum_type} checksum`, "mini")),
       h("td", {}, h("a", { class: "dl", href: p.url, download: file, title: file }, "Download")));
@@ -488,7 +499,7 @@ function versionBlock(data, version, isLatest, open, filterProvider, filterArch)
       h("span", { class: "vdate" }, versionDate(version.version)),
       h("span", { class: "vsum" },
         sortProviders([...new Set((version.providers || []).map((p) => p.name))]).map((p) => h("span", { class: "badge" }, providerName(p))),
-        [...new Set((version.providers || []).map((p) => p.architecture))].sort().map((a) => h("span", { class: "badge arch" }, archName(a))))),
+        [...new Set((version.providers || []).map((p) => p.arch))].sort().map((a) => h("span", { class: "badge arch" }, archName(a))))),
     body);
   const fill = () => {
     if (body.childElementCount) return;
@@ -524,7 +535,7 @@ async function renderBox(box) {
   const more = h("button", { type: "button", class: "btn more" }, "Show all versions");
   const drawVersions = () => {
     const matching = data.versions.filter((v) => (v.providers || []).some((p) =>
-      (!provider.value || p.name === provider.value) && (!arch.value || p.architecture === arch.value)));
+      (!provider.value || p.name === provider.value) && (!arch.value || p.arch === arch.value)));
     count.textContent = `${matching.length} of ${data.versions.length}`;
     list.replaceChildren(...(matching.length
       ? matching.slice(0, limit).map((v, i) => versionBlock(data, v, v === data.versions[0], i === 0, provider.value, arch.value))
